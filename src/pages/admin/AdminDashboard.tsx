@@ -797,7 +797,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   </button>
 
                   <button
-                    onClick={() => setCreateOfferModal(true)}
+                    onClick={() => setActiveTab('OFFERS')}
                     className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-semibold text-slate-300 text-left transition group"
                   >
                     <div className="font-bold text-slate-100 group-hover:text-amber-300 transition">+ Create Promo</div>
@@ -1963,89 +1963,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow"
                 >
                   Save Service
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Create Offer Modal */}
-      {createOfferModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-3 text-xs">
-            <h3 className="text-base font-bold mb-2">Create Promotion Voucher</h3>
-            <form onSubmit={handleCreateOffer} className="space-y-3">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Coupon Code (e.g. DIWALI20)</label>
-                <input
-                  type="text"
-                  required
-                  value={newOfferData.code}
-                  onChange={e => setNewOfferData({ ...newOfferData, code: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100 font-mono uppercase"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Offer Title</label>
-                <input
-                  type="text"
-                  required
-                  value={newOfferData.title}
-                  onChange={e => setNewOfferData({ ...newOfferData, title: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Discount Type</label>
-                  <select
-                    value={newOfferData.discountType}
-                    onChange={e => setNewOfferData({ ...newOfferData, discountType: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                  >
-                    <option value="FREE_UNITS">Free Units</option>
-                    <option value="PERCENT">Percentage (%)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Discount Value</label>
-                  <input
-                    type="number"
-                    required
-                    value={newOfferData.discountValue}
-                    onChange={e => setNewOfferData({ ...newOfferData, discountValue: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Description</label>
-                <input
-                  type="text"
-                  value={newOfferData.description}
-                  onChange={e => setNewOfferData({ ...newOfferData, description: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateOfferModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow"
-                >
-                  Save Voucher
                 </button>
               </div>
             </form>
