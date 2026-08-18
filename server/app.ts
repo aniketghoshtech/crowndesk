@@ -17,7 +17,7 @@ import geminiRoutes from './routes/gemini';
 export function createExpressApp() {
   const app = express();
 
-  // Trust proxy for reverse proxies (Nginx, Cloud Run, Vercel, Cloudflare, etc.)
+  // Trust proxy for reverse proxies (Vercel, Cloudflare, etc.)
   app.set('trust proxy', 1);
 
   // Basic Security & Headers
@@ -33,10 +33,10 @@ export function createExpressApp() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Global Rate Limiter with proxy-safe key generator
+  // Global Rate Limiter
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 3000, // 3000 requests per 15 min window
+    max: 3000,
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
@@ -51,7 +51,7 @@ export function createExpressApp() {
   });
   app.use('/api/', globalLimiter);
 
-  // Health endpoint
+  // Health endpoints
   const healthHandler = (req: express.Request, res: express.Response) => {
     res.json({
       status: 'online',
@@ -64,7 +64,7 @@ export function createExpressApp() {
   app.get('/api/health', healthHandler);
   app.get('/health', healthHandler);
 
-  // Helper to mount routes with and without /api prefix for maximum hosting compatibility (Vercel, Render, Container, etc.)
+  // Helper to mount routes with and without /api prefix
   const mountRoutes = (prefix: string, router: express.Router | express.RequestHandler) => {
     app.use(`/api/${prefix}`, router);
     app.use(`/${prefix}`, router);
@@ -90,7 +90,7 @@ export function createExpressApp() {
     seoRoutes(req, res, next);
   });
 
-  // Global Error Handler to guarantee JSON responses and prevent serverless crashes
+  // Global Error Handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Express error captured:', err);
     if (res.headersSent) {
@@ -107,3 +107,4 @@ export function createExpressApp() {
 }
 
 export const app = createExpressApp();
+export default app; // ✅ CRITICAL: Vercel serverless (api/index.ts) এর জন্য এটি প্রয়োজন
