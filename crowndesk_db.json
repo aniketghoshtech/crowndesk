@@ -1186,9 +1186,9 @@
         "currency": "INR",
         "connectionStatus": "CONNECTED",
         "businessName": "CrownDesk Dental Technologies",
-        "upiId": "9058322251@paytm",
+        "upiId": "9058322251@kotakbank",
         "upiDisplayName": "CrownDesk Digital Dental Lab (Anurag Nishad)",
-        "upiQrImageUrl": "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental%20CAD&cu=INR",
+        "upiQrImageUrl": "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@kotakbank&pn=CrownDesk%20Dental%20CAD&cu=INR",
         "upiInstructions": "Scan with Google Pay, PhonePe, Paytm, or BHIM. After making the payment, enter your 12-digit UPI UTR / Reference number and upload the payment screenshot for instant account reconciliation.",
         "verificationMode": "MANUAL_ADMIN"
       }
