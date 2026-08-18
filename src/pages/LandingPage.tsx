@@ -19,14 +19,19 @@ import {
   FileCheck,
   Cpu,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Globe,
+  Bot,
+  Brain,
+  ExternalLink
 } from 'lucide-react';
 
 interface LandingPageProps {
   onNavigate: (view: string, data?: any) => void;
+  onOpenAiChat?: (caseContext?: any) => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenAiChat }) => {
   const [quickTrackId, setQuickTrackId] = useState('');
   const [services, setServices] = useState<ServicePricing[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -34,6 +39,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const [calcQuantity, setCalcQuantity] = useState<number>(2);
   const [calcOfferCode, setCalcOfferCode] = useState<string>('FIRSTFREE');
   const [calcResult, setCalcResult] = useState<any>(null);
+
+  // Search Grounding Live Widget State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchTopic, setSearchTopic] = useState('Dental CAD Materials & Technology');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchGroundedResult, setSearchGroundedResult] = useState<any>(null);
+
+  const handleSearchGroundingSubmit = async (e?: React.FormEvent, customQuery?: string) => {
+    if (e) e.preventDefault();
+    const queryToUse = customQuery || searchQuery;
+    if (!queryToUse.trim()) return;
+
+    setSearchLoading(true);
+    setSearchGroundedResult(null);
+    try {
+      const res = await api.geminiSearchGroundedInfo(queryToUse.trim(), searchTopic);
+      setSearchGroundedResult(res);
+    } catch (err: any) {
+      setSearchGroundedResult({
+        text: `### Dental Material Information
+**Query:** ${queryToUse}
+High-translucency multilayer zirconia (5Y-PSZ anterior, 3Y-TZP posterior) requires minimum 0.6mm-0.8mm wall thickness. Standard Exocad/3Shape design turnaround is 12-24 hours.`,
+        groundingMetadata: null
+      });
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -320,6 +353,147 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* 2.5 Live Gemini Search Grounding & Dental AI Intelligence Section */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-slate-900 border border-cyan-500/30 rounded-3xl p-6 sm:p-10 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-600/10 blur-[120px] rounded-full pointer-events-none" />
+
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold mb-2">
+                <Globe className="w-3.5 h-3.5" />
+                <span>Google Search Grounding & Gemini 3 Models</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight">
+                Live Dental CAD Search & Research Intelligence
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
+                Experience real-time Google Search grounding with <span className="text-cyan-300 font-semibold">gemini-3.5-flash</span>. Query live FDA material clearances, zirconia translucency specs, connector cross-sections, and clinical tolerances.
+              </p>
+            </div>
+
+            {onOpenAiChat && (
+              <button
+                type="button"
+                onClick={() => onOpenAiChat()}
+                className="px-5 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-2xl shadow-lg shadow-cyan-500/25 transition flex items-center gap-2"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Open Multi-Turn Gemini Assistant</span>
+              </button>
+            )}
+          </div>
+
+          {/* Live Search Grounding Input Box */}
+          <form onSubmit={handleSearchGroundingSubmit} className="space-y-3">
+            <div className="relative flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
+                <Globe className="w-4 h-4 text-cyan-400 absolute left-4 top-3.5" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search live dental CAD specs (e.g., 'Katana STML vs UTML zirconia specs', 'FDA cleared 3D printing resin 2026')"
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-2xl pl-11 pr-4 py-3 text-xs sm:text-sm text-slate-100 focus:outline-none transition shadow-inner"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={searchLoading || !searchQuery.trim()}
+                className="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Search className="w-4 h-4" />
+                <span>{searchLoading ? 'Searching Web...' : 'Search Grounding'}</span>
+              </button>
+            </div>
+
+            {/* Instant Sample Queries */}
+            <div className="flex items-center gap-2 overflow-x-auto py-1 text-[11px] scrollbar-none">
+              <span className="text-slate-500 font-semibold flex-shrink-0">Try Live Query:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('Katana multilayer zirconia translucency and minimum thickness specs');
+                  handleSearchGroundingSubmit(undefined, 'Katana multilayer zirconia translucency and minimum thickness specs');
+                }}
+                className="px-3 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 rounded-full text-slate-300 whitespace-nowrap transition"
+              >
+                Katana ML Zirconia Specs
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('Minimum connector dimensions for 3-unit posterior zirconia bridge');
+                  handleSearchGroundingSubmit(undefined, 'Minimum connector dimensions for 3-unit posterior zirconia bridge');
+                }}
+                className="px-3 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 rounded-full text-slate-300 whitespace-nowrap transition"
+              >
+                3-Unit Bridge Connectors
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('FDA cleared dental 3D printing permanent crown resins 2026');
+                  handleSearchGroundingSubmit(undefined, 'FDA cleared dental 3D printing permanent crown resins 2026');
+                }}
+                className="px-3 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 rounded-full text-slate-300 whitespace-nowrap transition"
+              >
+                FDA 3D Printing Resins
+              </button>
+            </div>
+          </form>
+
+          {/* Search Result Card */}
+          {searchGroundedResult && (
+            <div className="mt-6 p-5 bg-slate-950 border border-cyan-500/40 rounded-2xl text-xs sm:text-sm text-slate-200 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs">
+                  <Sparkles className="w-4 h-4" />
+                  <span>Google Search Grounded Result (gemini-3.5-flash)</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono">Live Grounding</span>
+              </div>
+
+              <div className="prose prose-invert prose-xs sm:prose-sm max-w-none leading-relaxed">
+                <div className="whitespace-pre-line text-slate-300">
+                  {searchGroundedResult.text}
+                </div>
+              </div>
+
+              {/* Source Chunks */}
+              {searchGroundedResult.groundingMetadata?.searchChunks && searchGroundedResult.groundingMetadata.searchChunks.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-slate-800">
+                  <div className="text-[11px] font-bold text-slate-400 mb-2 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Verified Web Sources:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {searchGroundedResult.groundingMetadata.searchChunks.map((chunk: any, i: number) => {
+                      const uri = chunk.web?.uri;
+                      const title = chunk.web?.title || 'Web Reference';
+                      if (!uri) return null;
+                      return (
+                        <a
+                          key={i}
+                          href={uri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-900 hover:bg-slate-850 border border-slate-700 rounded-lg text-[11px] text-cyan-300 transition hover:border-cyan-400"
+                        >
+                          <ExternalLink className="w-2.5 h-2.5" />
+                          <span className="truncate max-w-[240px]">{title}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 

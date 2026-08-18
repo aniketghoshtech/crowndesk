@@ -281,14 +281,19 @@ router.post('/', (req: Request, res: Response): void => {
 
     const {
       patientRef,
+      patientName,
       doctorName,
+      clinicName,
       serviceId,
       teeth = [],
+      teethNumbers = [],
       material,
       shade,
       instructions,
+      specialInstructions,
       additionalNotes,
       priority = 'STANDARD',
+      turnaroundType,
       dueDate,
       offerCode,
       files = []
@@ -305,7 +310,20 @@ router.post('/', (req: Request, res: Response): void => {
       return;
     }
 
-    const unitsQuantity = teeth.length > 0 ? teeth.length : (req.body.unitsQuantity || 1);
+    let finalTeeth: ToothItem[] = [];
+    if (Array.isArray(teeth) && teeth.length > 0) {
+      finalTeeth = teeth;
+    } else if (Array.isArray(teethNumbers) && teethNumbers.length > 0) {
+      finalTeeth = teethNumbers.map((num: any) => ({
+        toothNumber: String(num),
+        serviceCode: service.code,
+        shade: shade || service.shades[0] || 'A2',
+        material: material || service.materials[0] || 'Zirconia Multi-Layer',
+        notes: ''
+      }));
+    }
+
+    const unitsQuantity = finalTeeth.length > 0 ? finalTeeth.length : (req.body.unitsQuantity || 1);
     const unitPrice = service.unitPriceINR;
     let subtotal = unitPrice * unitsQuantity;
     let discountAmount = 0;
@@ -337,14 +355,20 @@ router.post('/', (req: Request, res: Response): void => {
     const newCaseId = db.generateNextCaseId();
     const now = new Date().toISOString();
 
+    const computedPriority: PriorityLevel = turnaroundType === 'RUSH_6H'
+      ? 'URGENT'
+      : turnaroundType === 'EXPRESS_12H'
+      ? 'RUSH'
+      : (priority as PriorityLevel) || 'STANDARD';
+
     const caseRecord: CaseRecord = {
       id: newCaseId,
       customerId: user.id,
       customerName: user.name,
-      customerClinic: user.clinicOrLabName || user.name,
+      customerClinic: clinicName || user.clinicOrLabName || user.name,
       customerEmail: user.email,
       customerPhone: user.phone || '',
-      patientRef: patientRef || `Case ${newCaseId}`,
+      patientRef: patientRef || patientName || `Case ${newCaseId}`,
       doctorName: doctorName || user.name,
       serviceId: service.id,
       serviceName: service.name,
@@ -352,11 +376,11 @@ router.post('/', (req: Request, res: Response): void => {
       material: material || service.materials[0] || 'Zirconia Multi-Layer',
       shade: shade || service.shades[0] || 'A2',
       unitsQuantity,
-      teeth: teeth as ToothItem[],
-      instructions: instructions || 'Standard anatomical contours and optimal marginal fit.',
+      teeth: finalTeeth,
+      instructions: instructions || specialInstructions || 'Standard anatomical contours and optimal marginal fit.',
       additionalNotes: additionalNotes || '',
       dueDate: dueDate || new Date(Date.now() + (service.standardTurnaroundHours || 24) * 3600000).toISOString(),
-      priority: (priority as PriorityLevel) || 'STANDARD',
+      priority: computedPriority,
       status: 'NEW',
       paymentStatus: finalTotalAmount === 0 ? 'PAID' : 'PENDING',
       unitPrice,
@@ -367,6 +391,18 @@ router.post('/', (req: Request, res: Response): void => {
       offerDiscountAmount,
       taxAmount,
       finalTotalAmount,
+      pricingSnapshot: {
+        serviceId: service.id,
+        serviceCode: service.code,
+        serviceName: service.name,
+        unitPriceINR: service.unitPriceINR,
+        unitPriceUSD: service.unitPriceUSD,
+        unitPriceEUR: service.unitPriceEUR,
+        unitPriceGBP: service.unitPriceGBP,
+        taxPercent: effectiveTaxPercent,
+        unitType: service.unitType || 'Per Tooth',
+        snapshottedAt: now
+      },
       finalStlUnlocked: finalTotalAmount === 0,
       files: files.map((f: any, idx: number) => ({
         id: f.id || `file-${Date.now()}-${idx}`,

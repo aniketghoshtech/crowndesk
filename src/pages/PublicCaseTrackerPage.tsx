@@ -4,16 +4,18 @@ import { useAuth } from '../context/AuthContext';
 import { CaseRecord } from '../types';
 import { CaseTimelineView } from '../components/case/CaseTimelineView';
 import { Dental3DViewer } from '../components/3d/Dental3DViewer';
-import { Search, ShieldAlert, CheckCircle2, Clock, FileCode, User, Lock, ArrowRight, Shield, Boxes, LayoutDashboard } from 'lucide-react';
+import { Search, ShieldAlert, CheckCircle2, Clock, FileCode, User, Lock, ArrowRight, Shield, Boxes, LayoutDashboard, Sparkles, Bot } from 'lucide-react';
 
 interface PublicCaseTrackerPageProps {
   initialSearchId?: string;
   onNavigate: (view: string, data?: any) => void;
+  onOpenAiChat?: (caseContext?: any) => void;
 }
 
 export const PublicCaseTrackerPage: React.FC<PublicCaseTrackerPageProps> = ({
   initialSearchId,
-  onNavigate
+  onNavigate,
+  onOpenAiChat
 }) => {
   const { user, isDoctor, isDesigner, isAdmin } = useAuth();
   const [searchTerm, setSearchTerm] = useState(initialSearchId || '');
@@ -127,6 +129,25 @@ export const PublicCaseTrackerPage: React.FC<PublicCaseTrackerPageProps> = ({
             </div>
 
             <div className="flex items-center gap-3">
+              {onOpenAiChat && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenAiChat({
+                      caseId: searchedCase.id,
+                      serviceCode: searchedCase.serviceCode,
+                      status: searchedCase.status,
+                      notes: searchedCase.clinicalNotes,
+                      restorationType: searchedCase.serviceCode
+                    })
+                  }
+                  className="px-3.5 py-2 bg-gradient-to-r from-cyan-950 to-blue-950 hover:from-cyan-900 hover:to-blue-900 border border-cyan-500/40 rounded-xl text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Ask Gemini About Case</span>
+                </button>
+              )}
+
               <div className="text-right">
                 <div className="text-[10px] uppercase font-bold text-slate-400">Current Status</div>
                 <div className="text-sm font-bold text-cyan-400">{searchedCase.status.replace('_', ' ')}</div>

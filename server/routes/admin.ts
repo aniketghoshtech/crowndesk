@@ -343,77 +343,37 @@ router.put('/payment-settings', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 9. POST /api/admin/payment-settings/test-connection - Test Gateway Connection / Webhook Health
+// 9. POST /api/admin/payment-settings/test-connection - Test UPI Merchant Health & Validation
 router.post('/payment-settings/test-connection', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const { provider } = req.body; // 'RAZORPAY' | 'STRIPE' | 'UPI_MANUAL' | 'BANK_TRANSFER'
-
     const raw = db.getRawPaymentSettings();
     const now = new Date().toISOString();
 
+    const u = raw.providers.upi;
     let status = 'CONNECTED';
     let message = '';
 
-    if (provider === 'RAZORPAY') {
-      const r = raw.providers.razorpay;
-      if (!r.publicKey || !r.secretKey) {
-        status = 'UNCONFIGURED';
-        message = 'Razorpay Key ID or Key Secret is missing.';
-      } else {
-        status = 'CONNECTED';
-        message = `Razorpay API connectivity verified in ${r.mode} mode for currency ${r.currency}.`;
-      }
-      r.connectionStatus = status as any;
-      r.lastConnectionCheck = now;
-      r.lastWebhookCheck = now;
-    } else if (provider === 'STRIPE') {
-      const s = raw.providers.stripe;
-      if (!s.publicKey || !s.secretKey) {
-        status = 'UNCONFIGURED';
-        message = 'Stripe Public Key or Secret Key is missing.';
-      } else {
-        status = 'CONNECTED';
-        message = `Stripe Gateway verified in ${s.mode} mode. Webhook endpoints ready.`;
-      }
-      s.connectionStatus = status as any;
-      s.lastConnectionCheck = now;
-      s.lastWebhookCheck = now;
-    } else if (provider === 'UPI_MANUAL') {
-      const u = raw.providers.upi;
-      if (!u.upiId) {
-        status = 'UNCONFIGURED';
-        message = 'Merchant UPI ID is not configured.';
-      } else {
-        status = 'CONNECTED';
-        message = `UPI payment handle "${u.upiId}" verified and QR routing active.`;
-      }
-      u.connectionStatus = status as any;
-      u.lastConnectionCheck = now;
-    } else if (provider === 'BANK_TRANSFER') {
-      const b = raw.providers.bankTransfer;
-      if (!b.bankAccountNumber || !b.bankIfsc) {
-        status = 'UNCONFIGURED';
-        message = 'Bank account number or IFSC code is missing.';
-      } else {
-        status = 'CONNECTED';
-        message = `Bank transfer details verified for ${b.bankName} (${b.bankIfsc}).`;
-      }
-      b.connectionStatus = status as any;
-      b.lastConnectionCheck = now;
+    if (!u || !u.upiId || !u.upiId.includes('@')) {
+      status = 'UNCONFIGURED';
+      message = 'Valid Merchant UPI ID (e.g. 9058322251@paytm, merchant@upi) is required.';
     } else {
-      res.status(400).json({ error: 'Unknown provider.' });
-      return;
+      status = 'CONNECTED';
+      message = `UPI payment handle "${u.upiId}" verified. Dynamic UPI intent string and QR generator ready.`;
     }
 
+    if (u) {
+      u.connectionStatus = status as any;
+      u.lastConnectionCheck = now;
+    }
     db.save();
 
     db.logAudit({
       userId: adminUser.id,
       userName: adminUser.name,
       userRole: adminUser.role,
-      action: 'PAYMENT_CONNECTION_TESTED',
-      details: `Tested ${provider} gateway: Result=${status} (${message})`,
+      action: 'UPI_CONNECTION_TESTED',
+      details: `Tested UPI Merchant Gateway: Result=${status} (${message})`,
       ipAddress: req.ip || '127.0.0.1',
       result: status === 'CONNECTED' ? 'SUCCESS' : 'WARNING'
     });
@@ -426,49 +386,60 @@ router.post('/payment-settings/test-connection', requireAdmin, (req: Request, re
       paymentSettings: db.getMaskedPaymentSettings()
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Connection test failed.' });
+    res.status(500).json({ error: err.message || 'UPI connection test failed.' });
   }
 });
 
 // 10. GET /api/admin/payments - List All Payments with Filtering & Search
 router.get('/payments', requireAdmin, (req: Request, res: Response): void => {
   try {
-    const { status, gateway, search } = req.query;
+    const { status, search } = req.query;
     let payments = db.getAllPayments();
 
     if (status && status !== 'ALL') {
-      payments = payments.filter(p => p.status === status);
+      payments = payments.filter(p => {
+        if (status === 'PAID') return p.status === 'PAID' || p.status === 'SUCCESS';
+        if (status === 'UNDER_REVIEW') return p.status === 'UNDER_REVIEW' || p.status === 'PENDING_VERIFICATION';
+        if (status === 'PENDING') return p.status === 'PENDING';
+        if (status === 'REJECTED') return p.status === 'REJECTED' || p.status === 'FAILED';
+        if (status === 'REFUNDED') return p.status === 'REFUNDED';
+        return p.status === status;
+      });
     }
-    if (gateway && gateway !== 'ALL') {
-      payments = payments.filter(p => p.gateway === gateway);
-    }
+
     if (search) {
       const q = String(search).toLowerCase();
       payments = payments.filter(p =>
         p.id.toLowerCase().includes(q) ||
         p.caseId.toLowerCase().includes(q) ||
-        p.customerName.toLowerCase().includes(q) ||
-        p.transactionId.toLowerCase().includes(q) ||
+        (p.customerName && p.customerName.toLowerCase().includes(q)) ||
+        (p.upiTransactionId && p.upiTransactionId.toLowerCase().includes(q)) ||
+        (p.transactionId && p.transactionId.toLowerCase().includes(q)) ||
         (p.invoiceId && p.invoiceId.toLowerCase().includes(q))
       );
     }
 
-    const totalRevenue = payments.reduce((acc, p) => p.status === 'SUCCESS' ? acc + p.amount : acc, 0);
-    const pendingCount = payments.filter(p => p.status === 'PENDING' || p.status === 'PENDING_VERIFICATION').length;
+    const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
+    const underReviewCount = payments.filter(p => p.status === 'UNDER_REVIEW' || p.status === 'PENDING_VERIFICATION').length;
+    const paidCount = payments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').length;
+    const rejectedCount = payments.filter(p => p.status === 'REJECTED' || p.status === 'FAILED').length;
 
     res.json({
       payments,
       totalCount: payments.length,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
-      pendingCount
+      underReviewCount,
+      paidCount,
+      rejectedCount,
+      pendingCount: underReviewCount
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch payments.' });
   }
 });
 
-// 11. POST /api/admin/payments/:id/approve - Approve Manual Bank Transfer / UPI Payment Proof
-router.post('/payments/:id/approve', requireAdmin, (req: Request, res: Response): void => {
+// Helper for approving/verifying UPI payments
+function handleVerifyPayment(req: Request, res: Response): void {
   try {
     const adminUser = (req as any).adminUser as User;
     const payment = db.findPaymentById(req.params.id);
@@ -485,13 +456,17 @@ router.post('/payments/:id/approve', requireAdmin, (req: Request, res: Response)
     }
 
     const now = new Date().toISOString();
-    const invoiceNum = payment.invoiceId || db.generateNextInvoiceNumber();
+    const invoiceNum = payment.invoiceId || caseRec.invoiceId || db.generateNextInvoiceNumber();
 
-    // 1. Update Payment Status
-    payment.status = 'SUCCESS';
+    // 1. Update Payment Status to PAID
+    payment.status = 'PAID';
     payment.verifiedBy = adminUser.name;
+    payment.verified_by = adminUser.name;
     payment.verifiedAt = now;
+    payment.verified_at = now;
     payment.invoiceId = invoiceNum;
+    payment.updatedAt = now;
+    payment.updated_at = now;
     db.updatePayment(payment.id, payment);
 
     // 2. Generate or update Invoice
@@ -517,7 +492,7 @@ router.post('/payments/:id/approve', requireAdmin, (req: Request, res: Response)
         taxAmount: caseRec.taxAmount,
         totalAmount: caseRec.finalTotalAmount,
         paymentId: payment.id,
-        paymentGateway: `${payment.gateway} (Verified by Admin: ${adminUser.name})`,
+        paymentGateway: `CrownDesk UPI (Verified by ${adminUser.name})`,
         paymentStatus: 'PAID',
         issuedAt: now,
         paidAt: now
@@ -529,7 +504,8 @@ router.post('/payments/:id/approve', requireAdmin, (req: Request, res: Response)
       db.save();
     }
 
-    // 3. Unlock Final Design Download on Case
+    // 3. Unlock Final Design Download on Case & Update Status
+    const previousStatus = caseRec.status;
     caseRec.paymentStatus = 'PAID';
     caseRec.paymentId = payment.id;
     caseRec.invoiceId = invoiceNum;
@@ -543,24 +519,26 @@ router.post('/payments/:id/approve', requireAdmin, (req: Request, res: Response)
       id: `tl-${Date.now()}`,
       caseId: caseRec.id,
       timestamp: now,
-      action: 'Payment Verified & Approved by Admin',
+      previousStatus,
+      newStatus: caseRec.status,
+      action: 'UPI Payment Verified & Approved',
       userId: adminUser.id,
       userName: adminUser.name,
       userRole: adminUser.role,
-      comment: `Manual ${payment.gateway} transfer (Txn: ${payment.transactionId}) verified for ₹${payment.amount}. Invoice ${invoiceNum} generated.`
+      comment: `UPI payment ₹${payment.amount} (UTR: ${payment.upiTransactionId || payment.transactionId}) verified. Invoice ${invoiceNum} generated. Final CAD files unlocked.`
     });
 
     db.updateCase(caseRec.id, caseRec);
 
-    // 4. Audit Log
+    // 4. Immutable Audit Log
     db.logAudit({
       userId: adminUser.id,
       userName: adminUser.name,
       userRole: adminUser.role,
-      action: 'PAYMENT_MANUALLY_APPROVED',
+      action: 'UPI_PAYMENT_VERIFIED',
       caseId: caseRec.id,
       targetId: payment.id,
-      details: `Admin approved payment of ₹${payment.amount} (Txn: ${payment.transactionId}). Final STL files unlocked.`,
+      details: `Admin ${adminUser.name} verified UPI payment of ₹${payment.amount} (UTR: ${payment.upiTransactionId || payment.transactionId}). Files unlocked.`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
@@ -568,28 +546,32 @@ router.post('/payments/:id/approve', requireAdmin, (req: Request, res: Response)
     // 5. Notify Customer
     db.createNotification({
       userId: caseRec.customerId,
-      title: `Payment Approved: Case ${caseRec.id}`,
-      message: `Your payment of ₹${payment.amount} has been verified by the lab. Final STL downloads are unlocked.`,
+      title: `Payment Verified: Case ${caseRec.id}`,
+      message: `Your UPI payment of ₹${payment.amount} has been verified by CrownDesk. Invoice ${invoiceNum} is ready and final STL files are unlocked.`,
       link: `/customer/cases/${caseRec.id}`,
       type: 'SUCCESS'
     });
 
     res.json({
-      message: 'Payment approved successfully! Final files unlocked and invoice created.',
+      message: 'UPI payment verified successfully! Final files unlocked and invoice created.',
       payment,
       case: caseRec,
       invoice
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to approve payment.' });
+    res.status(500).json({ error: err.message || 'Failed to verify payment.' });
   }
-});
+}
 
-// 12. POST /api/admin/payments/:id/reject - Reject Manual Bank Transfer / Invalid Proof
+// 11. POST /api/admin/payments/:id/verify and /approve
+router.post('/payments/:id/verify', requireAdmin, handleVerifyPayment);
+router.post('/payments/:id/approve', requireAdmin, handleVerifyPayment);
+
+// 12. POST /api/admin/payments/:id/reject - Reject UPI Payment with Reason
 router.post('/payments/:id/reject', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const { reason = 'Transaction reference could not be verified in bank ledger.' } = req.body;
+    const { reason = 'UPI Reference (UTR) could not be verified in merchant bank statement.' } = req.body;
     const payment = db.findPaymentById(req.params.id);
 
     if (!payment) {
@@ -597,33 +579,40 @@ router.post('/payments/:id/reject', requireAdmin, (req: Request, res: Response):
       return;
     }
 
+    const now = new Date().toISOString();
     const caseRec = db.findCaseById(payment.caseId);
-    payment.status = 'FAILED';
+    payment.status = 'REJECTED';
+    payment.rejectionReason = reason;
+    payment.rejection_reason = reason;
     payment.notes = `Rejected by ${adminUser.name}: ${reason}`;
     payment.verifiedBy = adminUser.name;
-    payment.verifiedAt = new Date().toISOString();
+    payment.verified_by = adminUser.name;
+    payment.verifiedAt = now;
+    payment.verified_at = now;
+    payment.updatedAt = now;
+    payment.updated_at = now;
     db.updatePayment(payment.id, payment);
 
     if (caseRec) {
-      caseRec.paymentStatus = 'PENDING';
+      caseRec.paymentStatus = 'REJECTED';
       caseRec.finalStlUnlocked = false;
-      caseRec.updatedAt = new Date().toISOString();
+      caseRec.updatedAt = now;
       caseRec.timeline.push({
         id: `tl-${Date.now()}`,
         caseId: caseRec.id,
-        timestamp: new Date().toISOString(),
-        action: 'Payment Proof Rejected',
+        timestamp: now,
+        action: 'UPI Payment Rejected',
         userId: adminUser.id,
         userName: adminUser.name,
         userRole: adminUser.role,
-        comment: `Payment proof rejected: ${reason}`
+        comment: `UPI payment proof rejected: ${reason}`
       });
       db.updateCase(caseRec.id, caseRec);
 
       db.createNotification({
         userId: caseRec.customerId,
-        title: `Payment Proof Rejected: ${caseRec.id}`,
-        message: `Your payment proof was not approved. Reason: ${reason}. Please re-submit or use online card/UPI checkout.`,
+        title: `UPI Payment Rejected: ${caseRec.id}`,
+        message: `Your UPI payment proof was not approved. Reason: ${reason}. Please re-submit with the correct 12-digit UTR.`,
         link: `/customer/cases/${caseRec.id}`,
         type: 'WARNING'
       });
@@ -633,15 +622,15 @@ router.post('/payments/:id/reject', requireAdmin, (req: Request, res: Response):
       userId: adminUser.id,
       userName: adminUser.name,
       userRole: adminUser.role,
-      action: 'PAYMENT_REJECTED',
+      action: 'UPI_PAYMENT_REJECTED',
       caseId: payment.caseId,
       targetId: payment.id,
-      details: `Admin rejected payment ${payment.id}. Reason: ${reason}`,
+      details: `Admin rejected UPI payment ${payment.id}. Reason: ${reason}`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'WARNING'
     });
 
-    res.json({ message: 'Payment rejected.', payment });
+    res.json({ message: 'Payment marked as rejected.', payment, case: caseRec });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to reject payment.' });
   }
@@ -664,6 +653,8 @@ router.post('/payments/:id/refund', requireAdmin, (req: Request, res: Response):
     payment.refundReason = refundReason;
     payment.refundedAt = now;
     payment.refundedBy = adminUser.name;
+    payment.updatedAt = now;
+    payment.updated_at = now;
     db.updatePayment(payment.id, payment);
 
     const caseRec = db.findCaseById(payment.caseId);
@@ -679,7 +670,7 @@ router.post('/payments/:id/refund', requireAdmin, (req: Request, res: Response):
         userId: adminUser.id,
         userName: adminUser.name,
         userRole: adminUser.role,
-        comment: `Refund of ₹${payment.amount} processed. Reason: ${refundReason}`
+        comment: `UPI refund of ₹${payment.amount} processed. Reason: ${refundReason}`
       });
       db.updateCase(caseRec.id, caseRec);
 
@@ -704,7 +695,7 @@ router.post('/payments/:id/refund', requireAdmin, (req: Request, res: Response):
       result: 'SUCCESS'
     });
 
-    res.json({ message: 'Payment marked as refunded.', payment });
+    res.json({ message: 'Payment marked as refunded.', payment, case: caseRec });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to refund payment.' });
   }

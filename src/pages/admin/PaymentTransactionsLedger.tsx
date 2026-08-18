@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { PaymentRecord } from '../../types';
 import {
-  CreditCard,
   Search,
   CheckCircle2,
   AlertCircle,
@@ -12,19 +11,16 @@ import {
   Check,
   X,
   RotateCcw,
-  Building,
   QrCode,
-  FileText,
-  DollarSign,
+  FileCheck,
   ExternalLink,
-  ShieldAlert
+  ShieldCheck
 } from 'lucide-react';
 
 export const PaymentTransactionsLedger: React.FC = () => {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [gatewayFilter, setGatewayFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
@@ -35,7 +31,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
   const [rejectModal, setRejectModal] = useState<{ open: boolean; paymentId: string; reason: string }>({
     open: false,
     paymentId: '',
-    reason: 'UTR transaction number not found in bank ledger.'
+    reason: '12-digit UPI UTR reference number not found in laboratory bank ledger.'
   });
   const [refundModal, setRefundModal] = useState<{ open: boolean; paymentId: string; reason: string }>({
     open: false,
@@ -46,7 +42,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
 
   useEffect(() => {
     loadPayments();
-  }, [statusFilter, gatewayFilter]);
+  }, [statusFilter]);
 
   const loadPayments = async () => {
     try {
@@ -54,7 +50,6 @@ export const PaymentTransactionsLedger: React.FC = () => {
       setActionMsg(null);
       const res = await api.getAdminPayments({
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        gateway: gatewayFilter !== 'ALL' ? gatewayFilter : undefined,
         search: searchQuery.trim() || undefined
       });
       setPayments(res.payments || []);
@@ -76,8 +71,8 @@ export const PaymentTransactionsLedger: React.FC = () => {
     try {
       setActionLoading(true);
       setActionMsg(null);
-      await api.approveAdminPayment(paymentId);
-      setActionMsg({ type: 'success', text: 'Payment verified & approved! Case STL files unlocked and invoice issued.' });
+      await api.verifyAdminPayment(paymentId);
+      setActionMsg({ type: 'success', text: 'UPI payment verified & approved! Production CAD STL files unlocked and tax invoice issued.' });
       loadPayments();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: err.message || 'Failed to approve payment.' });
@@ -93,7 +88,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
       setActionMsg(null);
       await api.rejectAdminPayment(rejectModal.paymentId, rejectModal.reason);
       setRejectModal({ open: false, paymentId: '', reason: '' });
-      setActionMsg({ type: 'success', text: 'Payment rejected. Customer notified to re-submit.' });
+      setActionMsg({ type: 'success', text: 'Payment proof rejected. Doctor notified to re-check UTR and submit.' });
       loadPayments();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: err.message || 'Failed to reject payment.' });
@@ -118,28 +113,13 @@ export const PaymentTransactionsLedger: React.FC = () => {
     }
   };
 
-  const getGatewayIcon = (gateway: string) => {
-    switch (gateway) {
-      case 'RAZORPAY':
-        return <span className="w-6 h-6 rounded bg-blue-50 text-blue-700 font-bold flex items-center justify-center text-xs">R</span>;
-      case 'STRIPE':
-        return <span className="w-6 h-6 rounded bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center text-xs">S</span>;
-      case 'UPI_MANUAL':
-        return <QrCode className="w-5 h-5 text-emerald-600" />;
-      case 'BANK_TRANSFER':
-        return <Building className="w-5 h-5 text-amber-600" />;
-      default:
-        return <CreditCard className="w-5 h-5 text-slate-600" />;
-    }
-  };
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'SUCCESS':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
             <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-            PAID / SUCCESS
+            PAID / VERIFIED
           </span>
         );
       case 'PENDING_VERIFICATION':
@@ -159,7 +139,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">
             <X className="w-3.5 h-3.5 mr-1" />
-            FAILED / REJECTED
+            REJECTED
           </span>
         );
       case 'REFUNDED':
@@ -180,35 +160,35 @@ export const PaymentTransactionsLedger: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Collected Revenue</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Verified UPI Revenue</span>
             <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
               ₹
             </div>
           </div>
           <p className="text-2xl font-black text-slate-900 mt-2">₹{(totalRevenue ?? 0).toLocaleString('en-IN')}</p>
-          <span className="text-xs text-emerald-600 font-medium mt-1 inline-block">100% Real-time reconciliation</span>
+          <span className="text-xs text-emerald-600 font-medium mt-1 inline-block">100% Direct UPI Reconciliation</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Awaiting Admin Verification</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Awaiting Super Admin Audit</span>
             <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
               <Clock className="w-5 h-5" />
             </div>
           </div>
           <p className="text-2xl font-black text-slate-900 mt-2">{pendingCount}</p>
-          <span className="text-xs text-amber-600 font-medium mt-1 inline-block">Manual Bank / UPI Transfers</span>
+          <span className="text-xs text-amber-600 font-medium mt-1 inline-block">Pending UTR submissions</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Settlement Gateway Security</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Zero-Storage Security</span>
             <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
-              <CreditCard className="w-5 h-5" />
+              <ShieldCheck className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-base font-bold text-slate-900 mt-2">Zero-Storage Compliant</p>
-          <span className="text-xs text-slate-500 mt-1 inline-block">Razorpay • Stripe • Direct UPI • NEFT</span>
+          <p className="text-base font-bold text-slate-900 mt-2">UPI Direct Only</p>
+          <span className="text-xs text-slate-500 mt-1 inline-block">Zero PIN/Card Storage • Verified by UTR</span>
         </div>
       </div>
 
@@ -231,7 +211,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Case ID, Txn/UTR, Doctor name, or Invoice..."
+              placeholder="Search by Case ID, UTR / Txn ID, Doctor, or Invoice..."
               className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-teal-500 focus:outline-none"
             />
           </form>
@@ -245,23 +225,10 @@ export const PaymentTransactionsLedger: React.FC = () => {
             >
               <option value="ALL">All Payment Statuses</option>
               <option value="PENDING_VERIFICATION">Needs Verification</option>
-              <option value="SUCCESS">Success / Paid</option>
+              <option value="SUCCESS">Verified / Paid</option>
               <option value="PENDING">Pending</option>
-              <option value="FAILED">Failed / Rejected</option>
+              <option value="FAILED">Rejected</option>
               <option value="REFUNDED">Refunded</option>
-            </select>
-
-            {/* Gateway Filter */}
-            <select
-              value={gatewayFilter}
-              onChange={(e) => setGatewayFilter(e.target.value)}
-              className="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:ring-2 focus:ring-teal-500 focus:outline-none"
-            >
-              <option value="ALL">All Gateways</option>
-              <option value="RAZORPAY">Razorpay (Cards/UPI)</option>
-              <option value="STRIPE">Stripe International</option>
-              <option value="UPI_MANUAL">Direct UPI Transfer</option>
-              <option value="BANK_TRANSFER">Bank NEFT/RTGS/IMPS</option>
             </select>
 
             <button
@@ -281,9 +248,9 @@ export const PaymentTransactionsLedger: React.FC = () => {
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Transaction / Case</th>
+                <th className="py-3.5 px-4">Case ID & Invoice</th>
                 <th className="py-3.5 px-4">Doctor / Clinic</th>
-                <th className="py-3.5 px-4">Gateway & Method</th>
+                <th className="py-3.5 px-4">12-Digit UTR / Transaction ID</th>
                 <th className="py-3.5 px-4">Amount</th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4">Date</th>
@@ -309,13 +276,12 @@ export const PaymentTransactionsLedger: React.FC = () => {
                   <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="font-semibold text-slate-900">{p.caseId}</div>
-                      <div className="text-[11px] font-mono text-slate-500 flex items-center space-x-1">
-                        <span>Ref: {p.transactionId || p.id}</span>
-                      </div>
-                      {p.invoiceId && (
+                      {p.invoiceId ? (
                         <span className="inline-block mt-0.5 text-[10px] font-mono font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
                           {p.invoiceId}
                         </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">Invoice pending</span>
                       )}
                     </td>
 
@@ -325,18 +291,28 @@ export const PaymentTransactionsLedger: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <div className="flex items-center space-x-2">
-                        {getGatewayIcon(p.gateway)}
-                        <div>
-                          <div className="font-medium text-slate-800 text-xs">{p.gateway}</div>
-                          <div className="text-[11px] text-slate-500">{p.paymentMethod || 'Online'}</div>
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                        <QrCode className="w-4 h-4 text-teal-600 shrink-0" />
+                        <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                          {p.transactionId || 'N/A'}
+                        </span>
                       </div>
+                      {p.paymentScreenshot && (
+                        <a
+                          href={p.paymentScreenshot}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-600 hover:underline mt-1"
+                        >
+                          <FileCheck className="w-3 h-3" />
+                          <span>View Screenshot Proof</span>
+                        </a>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4">
                       <div className="font-bold text-slate-900">
-                        {p.currency === 'USD' ? '$' : '₹'}{(p.amount ?? 0).toLocaleString()}
+                        ₹{(p.amount ?? 0).toLocaleString()}
                       </div>
                     </td>
 
@@ -353,7 +329,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
                         <button
                           onClick={() => setSelectedPayment(p)}
                           className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="View Payment Details & Receipt"
+                          title="View Payment Details"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -364,17 +340,17 @@ export const PaymentTransactionsLedger: React.FC = () => {
                             <button
                               onClick={() => handleApprove(p.id)}
                               disabled={actionLoading}
-                              className="px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center space-x-1"
-                              title="Approve Bank/UPI Transfer and unlock files"
+                              className="px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center space-x-1 shadow-sm"
+                              title="Verify UPI payment and unlock CAD files"
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>Approve</span>
+                              <span>Verify & Unlock</span>
                             </button>
                             <button
-                              onClick={() => setRejectModal({ open: true, paymentId: p.id, reason: 'Transaction reference not found in bank ledger.' })}
+                              onClick={() => setRejectModal({ open: true, paymentId: p.id, reason: '12-digit UTR reference not found in bank account.' })}
                               disabled={actionLoading}
                               className="px-2 py-1 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-colors"
-                              title="Reject invalid payment proof"
+                              title="Reject invalid UPI proof"
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -407,7 +383,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="font-bold text-lg text-slate-900">Payment Transaction Details</h3>
+                <h3 className="font-bold text-lg text-slate-900">UPI Payment Transaction Details</h3>
                 <p className="text-xs text-slate-500 font-mono">ID: {selectedPayment.id}</p>
               </div>
               <button
@@ -428,18 +404,18 @@ export const PaymentTransactionsLedger: React.FC = () => {
                 <span className="font-medium text-slate-900">{selectedPayment.customerName}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Amount Paid</span>
+                <span className="text-slate-500">Amount</span>
                 <span className="font-black text-slate-900 text-base">
-                  {selectedPayment.currency === 'USD' ? '$' : '₹'}{selectedPayment.amount}
+                  ₹{(selectedPayment.amount ?? 0).toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Gateway Provider</span>
-                <span className="font-semibold text-slate-800">{selectedPayment.gateway}</span>
+                <span className="text-slate-500">Payment Gateway</span>
+                <span className="font-semibold text-teal-700">UPI Direct Transfer</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Transaction / UTR Ref</span>
-                <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                <span className="text-slate-500">12-Digit UTR Ref</span>
+                <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
                   {selectedPayment.transactionId || 'N/A'}
                 </span>
               </div>
@@ -453,6 +429,25 @@ export const PaymentTransactionsLedger: React.FC = () => {
                   <span className="font-mono text-teal-700 font-semibold">{selectedPayment.invoiceId}</span>
                 </div>
               )}
+
+              {selectedPayment.paymentScreenshot && (
+                <div className="py-2">
+                  <span className="text-xs font-semibold text-slate-700 block mb-1.5">Submitted Payment Proof:</span>
+                  <a
+                    href={selectedPayment.paymentScreenshot}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-lg overflow-hidden border border-slate-200 max-h-48"
+                  >
+                    <img
+                      src={selectedPayment.paymentScreenshot}
+                      alt="Payment Receipt Screenshot"
+                      className="w-full object-contain bg-slate-900 max-h-48"
+                    />
+                  </a>
+                </div>
+              )}
+
               {selectedPayment.notes && (
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
                   <strong>Notes:</strong> {selectedPayment.notes}

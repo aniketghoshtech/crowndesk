@@ -53,7 +53,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
   const [specialInstructions, setSpecialInstructions] = useState('');
 
   // Selected Teeth
-  const [selectedTeeth, setSelectedTeeth] = useState<number[]>([14, 15]);
+  const [selectedTeeth, setSelectedTeeth] = useState<string[]>(['14', '15']);
 
   // Files
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);

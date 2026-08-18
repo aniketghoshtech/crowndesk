@@ -1,15 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { api } from '../services/api';
+import { auth, googleAuthProvider, signInWithPopup, fbSignOut, db, doc, setDoc, getDoc, validateFirestoreConnection } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<{ forcePasswordChange?: boolean; user: User }>;
+  loginWithGoogle: () => Promise<User>;
   adminLogin: (email: string, pass: string) => Promise<{ forcePasswordChange?: boolean; user: User }>;
   register: (data: any) => Promise<User>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   forcePasswordChangeModalOpen: boolean;
   setForcePasswordChangeModalOpen: (open: boolean) => void;
@@ -28,6 +31,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [forcePasswordChangeModalOpen, setForcePasswordChangeModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
+    // Test initial Firestore connection
+    validateFirestoreConnection();
+
     const initAuth = async () => {
       const storedToken = localStorage.getItem('crowndesk_token');
       if (storedToken) {
@@ -46,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setLoading(false);
     };
+
     initAuth();
   }, []);
 
@@ -58,6 +65,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Google Sign-In via Firebase Auth + Firestore Sync
+  const loginWithGoogle = async (): Promise<User> => {
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleAuthProvider);
+      const fbUser = result.user;
+
+      // Sync with Firestore User document
+      try {
+        const userDocRef = doc(db, 'users', fbUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (!userDocSnap.exists()) {
+          const isSuperAdminEmail =
+            fbUser.email?.toLowerCase() === 'anuragnishad895@gmail.com' ||
+            fbUser.email?.toLowerCase() === 'aniketghosh941111@gmail.com';
+
+          await setDoc(userDocRef, {
+            id: `usr-fb-${fbUser.uid}`,
+            uid: fbUser.uid,
+            name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Doctor',
+            email: fbUser.email || '',
+            role: isSuperAdminEmail ? 'SUPER_ADMIN' : 'DOCTOR_LAB',
+            clinicName: `${fbUser.displayName || 'Dental'} Practice`,
+            phone: fbUser.phoneNumber || '',
+            isVerified: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+      } catch (firestoreErr) {
+        console.warn('Firestore sync note:', firestoreErr);
+      }
+
+      // Sync with backend API
+      const syncRes = await api.syncFirebaseUser({
+        uid: fbUser.uid,
+        email: fbUser.email || '',
+        name: fbUser.displayName || undefined,
+        photoURL: fbUser.photoURL || undefined
+      });
+
+      localStorage.setItem('crowndesk_token', syncRes.token);
+      setToken(syncRes.token);
+      setUser(syncRes.user);
+
+      return syncRes.user;
+    } catch (error: any) {
+      console.error('Google Sign-in failed:', error);
+      throw new Error(error.message || 'Google Sign-in failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -91,7 +153,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res.user;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await fbSignOut(auth);
+    } catch (e) {
+      // Ignore
+    }
     localStorage.removeItem('crowndesk_token');
     setToken(null);
     setUser(null);
@@ -110,6 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         token,
         loading,
         login,
+        loginWithGoogle,
         adminLogin,
         register,
         logout,

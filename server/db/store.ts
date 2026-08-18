@@ -18,7 +18,8 @@ import {
   CaseStatus,
   CaseFile,
   TimelineEvent,
-  CaseComment
+  CaseComment,
+  PricingHistoryEntry
 } from '../models/types';
 
 const DB_FILE = path.join(process.cwd(), 'crowndesk_db.json');
@@ -28,6 +29,7 @@ export interface DatabaseSchema {
   cases: CaseRecord[];
   services: ServicePricing[];
   offers: Offer[];
+  pricingHistory: PricingHistoryEntry[];
   payments: PaymentRecord[];
   invoices: InvoiceRecord[];
   notifications: AppNotification[];
@@ -61,10 +63,14 @@ function getDefaultSeed(): DatabaseSchema {
       id: 'srv-crown',
       code: 'CROWN',
       name: 'Anterior & Posterior Crown',
+      category: 'Crown',
       description: 'High-precision anatomic contour single crown with customized proximal contacts and marginal fit.',
       unitType: 'Per Tooth',
+      currency: 'INR',
       unitPriceINR: 799,
       unitPriceUSD: 12.0,
+      unitPriceEUR: 10.5,
+      unitPriceGBP: 9.0,
       taxPercent: 18,
       discountPercent: 0,
       materials: ['Zirconia Multi-Layer (3D Pro)', 'Lithium Disilicate (E-Max)', 'Layered Zirconia', 'BioHPP PEEK', 'PMMA Temp'],
@@ -72,15 +78,21 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 12,
       active: true,
       featured: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
     {
       id: 'srv-bridge',
       code: 'BRIDGE',
       name: 'Multi-Unit Bridge (3 to 14 Units)',
+      category: 'Bridge',
       description: 'Engineered multi-unit bridge design with balanced connector cross-sections and pontic contours.',
       unitType: 'Per Unit',
+      currency: 'INR',
       unitPriceINR: 749,
       unitPriceUSD: 11.0,
+      unitPriceEUR: 9.8,
+      unitPriceGBP: 8.5,
       taxPercent: 18,
       discountPercent: 5,
       materials: ['High-Strength Zirconia', 'Monolithic Multilayer', 'PMMA Diagnostic', 'Cobalt-Chrome Frame'],
@@ -88,15 +100,21 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 18,
       active: true,
       featured: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
     {
       id: 'srv-implant',
       code: 'IMPLANT',
       name: 'Custom Abutment & Screw-Retained Crown',
+      category: 'Implant',
       description: 'Precision implant emergence profile design with titanium base alignment and screw access hole placement.',
       unitType: 'Per Implant',
+      currency: 'INR',
       unitPriceINR: 1399,
       unitPriceUSD: 20.0,
+      unitPriceEUR: 17.5,
+      unitPriceGBP: 15.0,
       taxPercent: 18,
       discountPercent: 0,
       materials: ['Ti-Base Hybrid Abutment', 'Custom Titanium Anodized', 'Zirconia Direct-to-Fixture'],
@@ -104,15 +122,21 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 24,
       active: true,
       featured: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
     {
       id: 'srv-veneer',
       code: 'VENEER',
       name: 'Ultra-Thin Aesthetic Veneer & Lumineer',
+      category: 'Veneer',
       description: 'Micro-thin facial aesthetic design (0.3mm - 0.5mm) with natural incisal translucency and surface texture.',
       unitType: 'Per Tooth',
+      currency: 'INR',
       unitPriceINR: 949,
       unitPriceUSD: 14.0,
+      unitPriceEUR: 12.5,
+      unitPriceGBP: 11.0,
       taxPercent: 18,
       discountPercent: 0,
       materials: ['IPS e.max Press CAD', 'Feldspathic Glass Ceramic', 'Micro-Hybrid Composite'],
@@ -120,15 +144,21 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 16,
       active: true,
       featured: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
     {
       id: 'srv-inlay',
       code: 'INLAY_ONLAY',
       name: 'Inlay / Onlay / Overlay / Vonlay',
+      category: 'Inlay / Onlay',
       description: 'Conservative biomimetic restoration preserving natural tooth structure with accurate internal fit.',
       unitType: 'Per Tooth',
+      currency: 'INR',
       unitPriceINR: 649,
       unitPriceUSD: 9.5,
+      unitPriceEUR: 8.5,
+      unitPriceGBP: 7.5,
       taxPercent: 18,
       discountPercent: 0,
       materials: ['Lithium Disilicate', 'Hybrid Nano Ceramic (Cerasmart)', 'Zirconia Pre-Shaded'],
@@ -136,15 +166,21 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 12,
       active: true,
       featured: false,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
     {
       id: 'srv-fullarch',
       code: 'FULL_ARCH',
       name: 'All-on-X / Full Arch Hybrid Bar',
+      category: 'Full Arch',
       description: 'Complete full arch reconstruction with verification jig alignment, gingival pink aesthetic CAD and screw retention.',
       unitType: 'Per Arch',
+      currency: 'INR',
       unitPriceINR: 5499,
       unitPriceUSD: 75.0,
+      unitPriceEUR: 68.0,
+      unitPriceGBP: 59.0,
       taxPercent: 18,
       discountPercent: 0,
       materials: ['Titanium Bar + Zirconia Individual Crowns', 'Monolithic Full Arch Zirconia', 'PEEK Sub-structure'],
@@ -152,15 +188,21 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 48,
       active: true,
       featured: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
     {
       id: 'srv-dsd',
       code: 'SMILE_DESIGN',
       name: 'Digital Smile Design (DSD) & Mockup',
+      category: 'Smile Design',
       description: 'Facial aesthetic smile makeover with 2D-to-3D calibration, golden proportion analysis and 3D printable mockup STL.',
       unitType: 'Per Smile (6-10 Teeth)',
+      currency: 'INR',
       unitPriceINR: 1199,
       unitPriceUSD: 17.0,
+      unitPriceEUR: 15.5,
+      unitPriceGBP: 13.5,
       taxPercent: 18,
       discountPercent: 0,
       materials: ['3D Printable Diagnostic Resin STL', 'Virtual PDF Presentation'],
@@ -168,6 +210,8 @@ function getDefaultSeed(): DatabaseSchema {
       standardTurnaroundHours: 24,
       active: true,
       featured: false,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-15T00:00:00.000Z'
     },
   ];
 
@@ -575,7 +619,7 @@ function getDefaultSeed(): DatabaseSchema {
           userId: adminId,
           userName: 'CrownDesk Billing',
           userRole: 'SUPER_ADMIN',
-          comment: 'Razorpay payment ₹4,479.28 confirmed. Invoice generated.'
+          comment: 'UPI payment ₹4,479.28 confirmed (Ref: UPI905832225101). Invoice generated.'
         },
         {
           id: 'tl-12',
@@ -697,26 +741,30 @@ function getDefaultSeed(): DatabaseSchema {
       customerName: 'Dr. Vivek Sharma',
       amount: 0,
       currency: 'INR',
-      gateway: 'RAZORPAY',
+      paymentMethod: 'UPI',
+      upiTransactionId: 'TXN_WELCOME_FREE_001',
       transactionId: 'TXN_WELCOME_FREE_001',
-      status: 'SUCCESS',
+      status: 'PAID',
       invoiceId: 'CD-INV-2026-00001',
-      paymentMethod: 'Welcome Offer Promotional Credits',
+      verifiedBy: 'Anurag Nishad (Super Admin)',
+      verifiedAt: '2026-08-16T10:16:00Z',
       createdAt: '2026-08-16T10:16:00Z'
     },
     {
-      id: 'pay_rzp_veneer_88291',
+      id: 'pay_upi_veneer_88291',
       caseId: 'CD-2026-00002',
       customerId: doctorId,
       customerName: 'Dr. Vivek Sharma',
       amount: 4479.28,
       currency: 'INR',
-      gateway: 'RAZORPAY',
-      transactionId: 'pay_RzpVeneer99201823',
-      gatewayOrderId: 'order_rzp_99218',
-      status: 'SUCCESS',
+      paymentMethod: 'UPI',
+      upiTransactionId: 'UPI905832225101',
+      transactionId: 'UPI905832225101',
+      status: 'PAID',
       invoiceId: 'CD-INV-2026-00002',
-      paymentMethod: 'UPI / NetBanking / Razorpay',
+      paymentProofUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=60',
+      verifiedBy: 'Anurag Nishad (Super Admin)',
+      verifiedAt: '2026-08-16T15:15:00Z',
       createdAt: '2026-08-16T15:15:00Z'
     }
   ];
@@ -742,7 +790,7 @@ function getDefaultSeed(): DatabaseSchema {
       taxAmount: 0,
       totalAmount: 0,
       paymentId: 'pay_cd_welcome_0001',
-      paymentGateway: 'Promotional Welcome Credits',
+      paymentGateway: 'CrownDesk Welcome Credit (Verified)',
       paymentStatus: 'PAID',
       issuedAt: '2026-08-16T10:16:00Z',
       paidAt: '2026-08-16T10:16:00Z'
@@ -766,8 +814,8 @@ function getDefaultSeed(): DatabaseSchema {
       offerDeduction: 0,
       taxAmount: 683.28,
       totalAmount: 4479.28,
-      paymentId: 'pay_rzp_veneer_88291',
-      paymentGateway: 'Razorpay Secure Checkout',
+      paymentId: 'pay_upi_veneer_88291',
+      paymentGateway: 'CrownDesk UPI Payment (Verified)',
       paymentStatus: 'PAID',
       issuedAt: '2026-08-16T15:15:00Z',
       paidAt: '2026-08-16T15:15:00Z'
@@ -828,7 +876,7 @@ function getDefaultSeed(): DatabaseSchema {
       userRole: 'DOCTOR_LAB',
       action: 'PAYMENT_VERIFIED',
       caseId: 'CD-2026-00002',
-      details: 'Razorpay payment verified for ₹4,479.28. Case status moved to RECEIVED.',
+      details: 'UPI payment verified for ₹4,479.28. Case status moved to RECEIVED.',
       ipAddress: '103.21.124.5',
       result: 'SUCCESS',
       timestamp: '2026-08-16T15:15:00Z'
@@ -947,66 +995,20 @@ function getDefaultSeed(): DatabaseSchema {
 
   const paymentSettings: FullPaymentSettings = {
     providers: {
-      razorpay: {
-        id: 'gw-razorpay',
-        provider: 'RAZORPAY',
-        name: 'Razorpay Payment Gateway (Cards, UPI, NetBanking, Wallets)',
-        enabled: true,
-        mode: 'TEST',
-        publicKey: process.env.RAZORPAY_KEY_ID || 'rzp_test_crowndesk_key',
-        secretKey: process.env.RAZORPAY_KEY_SECRET || 'rzp_secret_crowndesk_test',
-        webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'whsec_rzp_crowndesk_2026',
-        currency: 'INR',
-        webhookUrl: 'https://crowndesk.com/api/payments/webhook/razorpay',
-        connectionStatus: 'CONNECTED',
-        lastConnectionCheck: '2026-08-17T06:00:00Z',
-        lastWebhookCheck: '2026-08-17T06:00:00Z'
-      },
-      stripe: {
-        id: 'gw-stripe',
-        provider: 'STRIPE',
-        name: 'Stripe International (Global Visa, MasterCard, Amex, Apple Pay)',
-        enabled: true,
-        mode: 'TEST',
-        publicKey: process.env.STRIPE_PUBLIC_KEY || 'pk_test_crowndesk_sample',
-        secretKey: process.env.STRIPE_SECRET_KEY || 'sk_test_crowndesk_sample',
-        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_stripe_crowndesk_2026',
-        currency: 'USD',
-        webhookUrl: 'https://crowndesk.com/api/payments/webhook/stripe',
-        connectionStatus: 'CONNECTED',
-        lastConnectionCheck: '2026-08-17T06:00:00Z',
-        lastWebhookCheck: '2026-08-17T06:00:00Z'
-      },
       upi: {
         id: 'gw-upi',
-        provider: 'UPI_MANUAL',
-        name: 'Direct UPI & QR Code Transfer (GPay, PhonePe, Paytm, BHIM)',
+        provider: 'UPI',
+        name: 'CrownDesk UPI Payment (GPay, PhonePe, Paytm, BHIM)',
         enabled: true,
         mode: 'LIVE',
         currency: 'INR',
-        webhookUrl: 'https://crowndesk.com/api/payments/webhook/upi',
         connectionStatus: 'CONNECTED',
+        businessName: 'CrownDesk Dental Technologies',
         upiId: '9058322251@paytm',
         upiDisplayName: 'CrownDesk Digital Dental Lab (Anurag Nishad)',
         upiQrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental%20CAD&cu=INR',
-        upiInstructions: 'Scan with Google Pay, PhonePe, Paytm, or BHIM. After making the payment, enter your 12-digit UPI UTR / Reference number and upload the payment screenshot for instant account reconciliation.'
-      },
-      bankTransfer: {
-        id: 'gw-bank',
-        provider: 'BANK_TRANSFER',
-        name: 'Direct NEFT / RTGS / IMPS Bank Transfer',
-        enabled: true,
-        mode: 'LIVE',
-        currency: 'INR',
-        webhookUrl: 'https://crowndesk.com/api/payments/webhook/bank',
-        connectionStatus: 'CONNECTED',
-        bankAccountHolder: 'CrownDesk Dental Technologies (Anurag Nishad)',
-        bankName: 'State Bank of India (SBI)',
-        bankAccountType: 'Current Commercial Account',
-        bankAccountNumber: '389201948201',
-        bankAccountNumberMasked: '••••••••8201',
-        bankIfsc: 'SBIN0001234',
-        bankInstructions: 'Transfer via NEFT/RTGS/IMPS. Mention your Case ID in transfer remarks. Upload the bank transaction receipt or enter reference UTR.'
+        upiInstructions: 'Scan with Google Pay, PhonePe, Paytm, or BHIM. After making the payment, enter your 12-digit UPI UTR / Reference number and upload the payment screenshot for instant account reconciliation.',
+        verificationMode: 'MANUAL_ADMIN'
       }
     },
     settlement: {
@@ -1015,9 +1017,9 @@ function getDefaultSeed(): DatabaseSchema {
       businessPhone: '+91 9058322251',
       country: 'India',
       settlementCurrency: 'INR',
-      settlementProvider: 'Razorpay Auto-Settlement & Direct HDFC Bank Gateway',
+      settlementProvider: 'Direct Commercial Bank Account UPI Settlement',
       accountNickname: 'CrownDesk Primary Operations Account',
-      notes: 'Daily T+1 automatic settlement to CrownDesk commercial bank account.'
+      notes: 'Direct UPI payments settled immediately to primary merchant account.'
     },
     policy: {
       paymentTiming: 'BEFORE_FINAL_DOWNLOAD',
@@ -1035,13 +1037,13 @@ function getDefaultSeed(): DatabaseSchema {
 
   const storageConfig: StorageConfig = {
     provider: (process.env.STORAGE_PROVIDER as any) || 'LOCAL_SECURE_VAULT',
-    bucketName: process.env.STORAGE_BUCKET || 'crowndesk-private-cases-vault',
+    bucketName: process.env.AWS_S3_BUCKET || process.env.STORAGE_BUCKET || 'crowndesk-private-cases-vault',
     region: process.env.STORAGE_REGION || 'asia-south1 (Mumbai)',
     endpoint: process.env.STORAGE_ENDPOINT || '',
-    accessKey: process.env.STORAGE_ACCESS_KEY || '',
-    secretKey: process.env.STORAGE_SECRET_KEY || '',
+    accessKey: process.env.AWS_ACCESS_KEY_ID || process.env.STORAGE_ACCESS_KEY || '',
+    secretKey: process.env.AWS_SECRET_ACCESS_KEY || process.env.STORAGE_SECRET_KEY || '',
     supabaseUrl: process.env.SUPABASE_URL || 'https://xyzcompany.supabase.co',
-    supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '',
     maxFileSizeMB: 250,
     allowedExtensions: ['.stl', '.ply', '.obj', '.zip', '.jpg', '.jpeg', '.png', '.pdf', '.dcm'],
     retentionDays: 365,
@@ -1063,11 +1065,63 @@ function getDefaultSeed(): DatabaseSchema {
     isConfigured: true
   };
 
+  const pricingHistory: PricingHistoryEntry[] = [
+    {
+      id: 'prc-hist-1',
+      serviceId: 'srv-crown',
+      serviceCode: 'CROWN',
+      serviceName: 'Anterior & Posterior Crown',
+      oldPriceINR: 699,
+      newPriceINR: 799,
+      oldPriceUSD: 10.0,
+      newPriceUSD: 12.0,
+      currency: 'INR',
+      changedByUserId: adminId,
+      changedByUserName: 'Anurag Nishad (Super Admin)',
+      changedByUserRole: 'SUPER_ADMIN',
+      timestamp: '2026-08-15T08:30:00Z',
+      changeReason: 'Updated base pricing for high-accuracy 3D Pro multilayer zirconia CAD standards'
+    },
+    {
+      id: 'prc-hist-2',
+      serviceId: 'srv-bridge',
+      serviceCode: 'BRIDGE',
+      serviceName: 'Multi-Unit Bridge (3 to 14 Units)',
+      oldPriceINR: 699,
+      newPriceINR: 749,
+      oldPriceUSD: 10.0,
+      newPriceUSD: 11.0,
+      currency: 'INR',
+      changedByUserId: adminId,
+      changedByUserName: 'Anurag Nishad (Super Admin)',
+      changedByUserRole: 'SUPER_ADMIN',
+      timestamp: '2026-08-15T08:35:00Z',
+      changeReason: 'Multi-unit bridge precision connector calculation adjustments'
+    },
+    {
+      id: 'prc-hist-3',
+      serviceId: 'srv-implant',
+      serviceCode: 'IMPLANT',
+      serviceName: 'Custom Abutment & Screw-Retained Crown',
+      oldPriceINR: 1299,
+      newPriceINR: 1399,
+      oldPriceUSD: 18.0,
+      newPriceUSD: 20.0,
+      currency: 'INR',
+      changedByUserId: adminId,
+      changedByUserName: 'Anurag Nishad (Super Admin)',
+      changedByUserRole: 'SUPER_ADMIN',
+      timestamp: '2026-08-15T08:40:00Z',
+      changeReason: 'Ti-Base emergence profile and screw access channel alignment enhancement'
+    }
+  ];
+
   return {
     users,
     cases,
     services,
     offers,
+    pricingHistory,
     payments,
     invoices,
     notifications,
@@ -1099,6 +1153,7 @@ class DatabaseStore {
         return {
           ...seed,
           ...parsed,
+          pricingHistory: parsed.pricingHistory || seed.pricingHistory || [],
           paymentSettings: {
             ...seed.paymentSettings,
             ...(parsed.paymentSettings || {}),
@@ -1303,29 +1358,187 @@ class DatabaseStore {
   }
 
   public findServiceById(id: string): ServicePricing | undefined {
-    return this.data.services.find(s => s.id === id || s.code === id);
+    return this.data.services.find(s => s.id === id || s.code.toUpperCase() === id.toUpperCase());
   }
 
-  public addService(service: ServicePricing): ServicePricing {
-    this.data.services.push(service);
+  public addService(service: ServicePricing, createdBy?: { userId: string; userName: string; userRole: string }): ServicePricing {
+    const now = new Date().toISOString();
+    const newService: ServicePricing = {
+      ...service,
+      createdAt: service.createdAt || now,
+      updatedAt: service.updatedAt || now,
+      currency: service.currency || 'INR',
+      taxPercent: service.taxPercent !== undefined ? service.taxPercent : 18,
+      active: service.active !== undefined ? service.active : true,
+      isActive: service.active !== undefined ? service.active : true,
+    };
+    this.data.services.push(newService);
+    
+    if (createdBy) {
+      this.logAudit({
+        userId: createdBy.userId,
+        userName: createdBy.userName,
+        userRole: createdBy.userRole as any,
+        action: 'SERVICE_CREATED',
+        details: `Created new dental CAD service: ${newService.name} (${newService.code}) at ₹${newService.unitPriceINR} / ${newService.unitPriceUSD}`,
+        ipAddress: '127.0.0.1',
+        result: 'SUCCESS'
+      });
+    }
+
     this.save();
-    return service;
+    return newService;
   }
 
-  public updateService(id: string, updates: Partial<ServicePricing>): ServicePricing | undefined {
+  public updateService(
+    id: string,
+    updates: Partial<ServicePricing>,
+    changedBy?: { userId: string; userName: string; userRole: string; reason?: string }
+  ): ServicePricing | undefined {
     const srv = this.findServiceById(id);
     if (!srv) return undefined;
-    Object.assign(srv, updates);
+
+    const oldPriceINR = srv.unitPriceINR;
+    const oldPriceUSD = srv.unitPriceUSD;
+    const priceChanged = (updates.unitPriceINR !== undefined && updates.unitPriceINR !== oldPriceINR) ||
+                         (updates.unitPriceUSD !== undefined && updates.unitPriceUSD !== oldPriceUSD);
+
+    Object.assign(srv, updates, { updatedAt: new Date().toISOString() });
+    if (updates.active !== undefined) {
+      srv.isActive = updates.active;
+    }
+
+    if (priceChanged && changedBy) {
+      this.addPricingHistoryEntry({
+        serviceId: srv.id,
+        serviceCode: srv.code,
+        serviceName: srv.name,
+        oldPriceINR,
+        newPriceINR: srv.unitPriceINR,
+        oldPriceUSD,
+        newPriceUSD: srv.unitPriceUSD,
+        currency: srv.currency || 'INR',
+        changedByUserId: changedBy.userId,
+        changedByUserName: changedBy.userName,
+        changedByUserRole: changedBy.userRole,
+        changeReason: changedBy.reason || 'Admin updated service price in Pricing Management'
+      });
+
+      this.logAudit({
+        userId: changedBy.userId,
+        userName: changedBy.userName,
+        userRole: changedBy.userRole as any,
+        action: 'PRICING_UPDATED',
+        details: `Updated price for ${srv.name} (${srv.code}): ₹${oldPriceINR} -> ₹${srv.unitPriceINR} (${oldPriceUSD} -> ${srv.unitPriceUSD}). Reason: ${changedBy.reason || 'Admin configuration update'}`,
+        ipAddress: '127.0.0.1',
+        result: 'SUCCESS'
+      });
+    }
+
     this.save();
     return srv;
   }
 
-  public deleteService(id: string): boolean {
-    const index = this.data.services.findIndex(s => s.id === id);
-    if (index === -1) return false;
-    this.data.services.splice(index, 1);
+  public toggleServiceActive(id: string, changedBy?: { userId: string; userName: string; userRole: string }): ServicePricing | undefined {
+    const srv = this.findServiceById(id);
+    if (!srv) return undefined;
+    srv.active = !srv.active;
+    srv.isActive = srv.active;
+    srv.updatedAt = new Date().toISOString();
+
+    if (changedBy) {
+      this.logAudit({
+        userId: changedBy.userId,
+        userName: changedBy.userName,
+        userRole: changedBy.userRole as any,
+        action: srv.active ? 'SERVICE_ENABLED' : 'SERVICE_DISABLED',
+        details: `${srv.active ? 'Enabled' : 'Disabled'} service: ${srv.name} (${srv.code})`,
+        ipAddress: '127.0.0.1',
+        result: 'SUCCESS'
+      });
+    }
+
     this.save();
-    return true;
+    return srv;
+  }
+
+  public checkServiceInUse(id: string): { inUse: boolean; count: number } {
+    const srv = this.findServiceById(id);
+    if (!srv) return { inUse: false, count: 0 };
+    const count = (this.data.cases || []).filter(c => c.serviceId === srv.id || c.serviceCode === srv.code).length;
+    return { inUse: count > 0, count };
+  }
+
+  public deleteService(id: string, deletedBy?: { userId: string; userName: string; userRole: string }): { success: boolean; reason?: string; inUseCount?: number } {
+    const srv = this.findServiceById(id);
+    if (!srv) return { success: false, reason: 'Service not found' };
+
+    const index = this.data.services.findIndex(s => s.id === srv.id);
+    if (index === -1) return { success: false, reason: 'Service index not found' };
+
+    const check = this.checkServiceInUse(id);
+    if (check.inUse) {
+      // Instead of failing hard or leaving orphaned records, soft-disable the service
+      srv.active = false;
+      srv.isActive = false;
+      srv.updatedAt = new Date().toISOString();
+      this.save();
+
+      if (deletedBy) {
+        this.logAudit({
+          userId: deletedBy.userId,
+          userName: deletedBy.userName,
+          userRole: deletedBy.userRole as any,
+          action: 'SERVICE_SOFT_DISABLED',
+          details: `Service ${srv.name} has ${check.count} historical cases. Marked as Disabled/Archived instead of permanent purge to protect case history snapshots.`,
+          ipAddress: '127.0.0.1',
+          result: 'SUCCESS'
+        });
+      }
+
+      return {
+        success: true,
+        reason: 'SERVICE_ARCHIVED_DUE_TO_CASES',
+        inUseCount: check.count
+      };
+    }
+
+    this.data.services.splice(index, 1);
+    
+    if (deletedBy) {
+      this.logAudit({
+        userId: deletedBy.userId,
+        userName: deletedBy.userName,
+        userRole: deletedBy.userRole as any,
+        action: 'SERVICE_DELETED',
+        details: `Deleted service ${srv.name} (${srv.code})`,
+        ipAddress: '127.0.0.1',
+        result: 'SUCCESS'
+      });
+    }
+
+    this.save();
+    return { success: true };
+  }
+
+  // --- Pricing History ---
+  public getAllPricingHistory(): PricingHistoryEntry[] {
+    return this.data.pricingHistory || [];
+  }
+
+  public addPricingHistoryEntry(entry: Omit<PricingHistoryEntry, 'id' | 'timestamp'>): PricingHistoryEntry {
+    if (!this.data.pricingHistory) this.data.pricingHistory = [];
+    const newEntry: PricingHistoryEntry = {
+      id: `prc-hist-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      ...entry
+    };
+    this.data.pricingHistory.unshift(newEntry);
+    if (this.data.pricingHistory.length > 500) {
+      this.data.pricingHistory = this.data.pricingHistory.slice(0, 500);
+    }
+    this.save();
+    return newEntry;
   }
 
   // --- Offers ---
@@ -1437,32 +1650,16 @@ class DatabaseStore {
 
   public getMaskedPaymentSettings(): FullPaymentSettings {
     const raw = this.data.paymentSettings;
-    const mask = (val?: string) => (val && val.length > 0 ? '••••••••••••••••' : '');
-    const maskAccount = (acc?: string) => (acc && acc.length > 4 ? `••••••••${acc.slice(-4)}` : acc || '');
 
     return {
       providers: {
-        razorpay: {
-          ...raw.providers.razorpay,
-          secretKey: mask(raw.providers.razorpay.secretKey),
-          webhookSecret: mask(raw.providers.razorpay.webhookSecret)
-        },
-        stripe: {
-          ...raw.providers.stripe,
-          secretKey: mask(raw.providers.stripe.secretKey),
-          webhookSecret: mask(raw.providers.stripe.webhookSecret)
-        },
         upi: {
           ...raw.providers.upi
-        },
-        bankTransfer: {
-          ...raw.providers.bankTransfer,
-          bankAccountNumberMasked: maskAccount(raw.providers.bankTransfer.bankAccountNumber),
-          bankAccountNumber: undefined // Strip raw account number from frontend response
         }
       },
       settlement: { ...raw.settlement },
-      policy: { ...raw.policy }
+      policy: { ...raw.policy },
+      taxSettings: raw.taxSettings ? { ...raw.taxSettings } : undefined
     };
   }
 
@@ -1470,45 +1667,11 @@ class DatabaseStore {
     const current = this.data.paymentSettings;
 
     if (updates.providers) {
-      // Razorpay
-      if (updates.providers.razorpay) {
-        const r = updates.providers.razorpay;
-        current.providers.razorpay = {
-          ...current.providers.razorpay,
-          ...r,
-          secretKey: r.secretKey && !r.secretKey.startsWith('••••') ? r.secretKey : current.providers.razorpay.secretKey,
-          webhookSecret: r.webhookSecret && !r.webhookSecret.startsWith('••••') ? r.webhookSecret : current.providers.razorpay.webhookSecret
-        };
-      }
-
-      // Stripe
-      if (updates.providers.stripe) {
-        const s = updates.providers.stripe;
-        current.providers.stripe = {
-          ...current.providers.stripe,
-          ...s,
-          secretKey: s.secretKey && !s.secretKey.startsWith('••••') ? s.secretKey : current.providers.stripe.secretKey,
-          webhookSecret: s.webhookSecret && !s.webhookSecret.startsWith('••••') ? s.webhookSecret : current.providers.stripe.webhookSecret
-        };
-      }
-
       // UPI
       if (updates.providers.upi) {
         current.providers.upi = {
           ...current.providers.upi,
           ...updates.providers.upi
-        };
-      }
-
-      // Bank Transfer
-      if (updates.providers.bankTransfer) {
-        const b = updates.providers.bankTransfer;
-        const newAcc = b.bankAccountNumber && !b.bankAccountNumber.startsWith('••••') ? b.bankAccountNumber : current.providers.bankTransfer.bankAccountNumber;
-        current.providers.bankTransfer = {
-          ...current.providers.bankTransfer,
-          ...b,
-          bankAccountNumber: newAcc,
-          bankAccountNumberMasked: newAcc ? `••••••••${newAcc.slice(-4)}` : ''
         };
       }
     }
@@ -1546,8 +1709,15 @@ class DatabaseStore {
       }
     }
 
+    if (updates.taxSettings) {
+      current.taxSettings = {
+        ...current.taxSettings,
+        ...updates.taxSettings
+      };
+    }
+
     this.save();
-    return current;
+    return this.getMaskedPaymentSettings();
   }
 
   // --- Dynamic Tax Configuration Settings ---

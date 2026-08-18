@@ -32,7 +32,18 @@ export type CaseStatus =
   | 'COMPLETED' 
   | 'DELIVERED';
 
-export type PaymentStatus = 'PENDING' | 'PAID' | 'REFUNDED' | 'EXEMPT';
+export type PaymentStatus = 
+  | 'PENDING' 
+  | 'UNDER_REVIEW' 
+  | 'PAID' 
+  | 'REJECTED' 
+  | 'REFUNDED' 
+  | 'EXEMPT' 
+  | 'UNPAID' 
+  | 'SUCCESS' 
+  | 'FAILED' 
+  | 'PENDING_VERIFICATION';
+
 export type PriorityLevel = 'STANDARD' | 'RUSH' | 'URGENT';
 
 export interface ToothItem {
@@ -130,10 +141,24 @@ export interface CaseRecord {
   offerDiscountAmount?: number;
   taxAmount?: number;
   finalTotalAmount?: number;
+  pricingSnapshot?: {
+    serviceId: string;
+    serviceCode: string;
+    serviceName: string;
+    unitPriceINR: number;
+    unitPriceUSD: number;
+    unitPriceEUR?: number;
+    unitPriceGBP?: number;
+    taxPercent: number;
+    unitType: string;
+    snapshottedAt: string;
+  };
   paymentId?: string;
   invoiceId?: string;
   isFinalUnlocked?: boolean;
   finalStlUnlocked?: boolean;
+  clinicalNotes?: string;
+  clinicOrLabName?: string;
   files: CaseFile[];
   timelineHistory?: TimelineEvent[];
   timeline?: TimelineEvent[];
@@ -152,10 +177,14 @@ export interface ServicePricing {
   id: string;
   code: string;
   name: string;
+  category?: string; // "Crown", "Bridge", "Implant", "Veneer", "Inlay / Onlay", "Full Arch", "Smile Design", "Dentures", "Orthodontics", "Custom CAD"
   description: string;
   unitType: string;
+  currency?: string;
   unitPriceINR: number;
   unitPriceUSD: number;
+  unitPriceEUR?: number;
+  unitPriceGBP?: number;
   taxPercent: number;
   discountPercent: number;
   materials: string[];
@@ -164,6 +193,25 @@ export interface ServicePricing {
   isActive?: boolean;
   active?: boolean;
   featured?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PricingHistoryEntry {
+  id: string;
+  serviceId: string;
+  serviceCode: string;
+  serviceName: string;
+  oldPriceINR: number;
+  newPriceINR: number;
+  oldPriceUSD?: number;
+  newPriceUSD?: number;
+  currency: string;
+  changedByUserId: string;
+  changedByUserName: string;
+  changedByUserRole: string;
+  timestamp: string;
+  changeReason?: string;
 }
 
 export interface Offer {
@@ -208,9 +256,11 @@ export interface InvoiceRecord {
   offerDeduction: number;
   taxAmount: number;
   totalAmount: number;
+  finalTotalAmount?: number;
   paymentId: string;
   paymentGateway: string;
   paymentStatus: 'PAID' | 'UNPAID';
+  status?: string;
   issuedAt: string;
   paidAt?: string;
 }
@@ -252,33 +302,21 @@ export interface SeoConfig {
 
 export interface PaymentGatewayConfig {
   id: string;
-  provider: 'RAZORPAY' | 'STRIPE' | 'UPI_MANUAL' | 'BANK_TRANSFER';
+  provider: 'UPI';
   name: string;
   enabled: boolean;
-  mode: 'TEST' | 'LIVE';
-  publicKey?: string;
-  secretKey?: string;
-  webhookSecret?: string;
+  mode?: 'TEST' | 'LIVE';
   currency: string;
-  webhookUrl: string;
   connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'UNCONFIGURED';
   lastConnectionCheck?: string;
-  lastWebhookCheck?: string;
   
   // UPI specific
+  businessName?: string;
   upiId?: string;
   upiDisplayName?: string;
   upiQrImageUrl?: string;
   upiInstructions?: string;
-
-  // Bank Transfer specific
-  bankAccountHolder?: string;
-  bankName?: string;
-  bankAccountType?: string;
-  bankAccountNumber?: string;
-  bankAccountNumberMasked?: string;
-  bankIfsc?: string;
-  bankInstructions?: string;
+  verificationMode?: 'MANUAL_ADMIN' | 'INSTANT_PREVIEW';
 }
 
 export interface SettlementInfo {
@@ -310,10 +348,7 @@ export interface PaymentPolicySettings {
 
 export interface FullPaymentSettings {
   providers: {
-    razorpay: PaymentGatewayConfig;
-    stripe: PaymentGatewayConfig;
     upi: PaymentGatewayConfig;
-    bankTransfer: PaymentGatewayConfig;
   };
   settlement: SettlementInfo;
   policy: PaymentPolicySettings;
@@ -323,27 +358,42 @@ export interface FullPaymentSettings {
 export interface PaymentRecord {
   id: string;
   caseId: string;
+  case_id?: string;
   customerId: string;
+  customer_id?: string;
   customerName: string;
+  customer_name?: string;
   customerClinic?: string;
   serviceName?: string;
+  service_name?: string;
   amount: number;
   currency: string;
-  gateway: 'RAZORPAY' | 'STRIPE' | 'UPI_MANUAL' | 'BANK_TRANSFER';
+  gateway?: string;
+  paymentMethod: 'UPI' | string;
+  payment_method?: 'UPI' | string;
+  upiTransactionId?: string;
+  upi_transaction_id?: string;
   transactionId: string;
-  gatewayOrderId?: string;
-  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'PENDING_VERIFICATION' | 'REFUNDED';
-  invoiceId: string;
-  paymentMethod: string;
+  paymentScreenshot?: string;
+  payment_screenshot?: string;
   paymentProofUrl?: string;
   paymentProofFileName?: string;
-  notes?: string;
-  verifiedBy?: string;
-  verifiedAt?: string;
+  status: PaymentStatus;
+  rejectionReason?: string;
+  rejection_reason?: string;
   refundReason?: string;
-  refundedAt?: string;
+  verifiedBy?: string;
+  verified_by?: string;
+  verifiedAt?: string;
+  verified_at?: string;
   refundedBy?: string;
+  refundedAt?: string;
+  invoiceId: string;
+  notes?: string;
   createdAt: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
 }
 
 export interface StorageConfig {
@@ -359,6 +409,7 @@ export interface StorageConfig {
   allowedExtensions: string[];
   retentionDays: number;
   autoBackupEnabled: boolean;
+  signedUrlExpiryMinutes?: number;
   connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'UNCONFIGURED';
   lastConnectionCheck?: string;
   totalStorageUsedBytes: number;

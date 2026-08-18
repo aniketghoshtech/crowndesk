@@ -6,15 +6,16 @@ import { createServer as createViteServer } from 'vite';
 import authRoutes from './server/routes/auth';
 import caseRoutes from './server/routes/cases';
 import fileRoutes from './server/routes/files';
-import pricingRoutes from './server/routes/pricing';
-import paymentRoutes from './server/routes/payments';
+import pricingRoutes, { servicesRouter, offersRouter } from './server/routes/pricing';
+import paymentRoutes, { invoicesRouter } from './server/routes/payments';
 import adminRoutes from './server/routes/admin';
 import seoRoutes from './server/routes/seo';
 import notifRoutes from './server/routes/notifications';
+import geminiRoutes from './server/routes/gemini';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -25,12 +26,14 @@ async function startServer() {
   app.use('/api/cases', caseRoutes);
   app.use('/api/files', fileRoutes);
   app.use('/api/pricing', pricingRoutes);
-  app.use('/api', pricingRoutes);
+  app.use('/api/services', servicesRouter);
+  app.use('/api/offers', offersRouter);
   app.use('/api/payments', paymentRoutes);
-  app.use('/api', paymentRoutes);
+  app.use('/api/invoices', invoicesRouter);
   app.use('/api/admin', adminRoutes);
   app.use('/api/seo', seoRoutes);
   app.use('/api/notifications', notifRoutes);
+  app.use('/api/gemini', geminiRoutes);
 
   app.get('/api/health', (req, res) => {
     res.json({
@@ -39,6 +42,11 @@ async function startServer() {
       version: '1.0.0',
       timestamp: new Date().toISOString()
     });
+  });
+
+  // Safe JSON 404 for any unmatched /api routes (prevents serving HTML to API requests)
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
   });
 
   // Vite middleware for development

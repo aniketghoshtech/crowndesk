@@ -4,30 +4,26 @@ import { getAuthenticatedUser } from './auth';
 import { ServicePricing, Offer } from '../models/types';
 import { evaluateOffer } from '../services/offerEngine';
 
-const router = express.Router();
+export const servicesRouter = express.Router();
+export const offersRouter = express.Router();
+export const pricingRouter = express.Router();
 
-// 0. GET /api/pricing/tax-settings - Public live tax configuration
-router.get('/tax-settings', (req: Request, res: Response): void => {
-  try {
-    const taxSettings = db.getTaxSettings();
-    res.json({ taxSettings });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch tax settings.' });
-  }
-});
+// ==========================================
+// Services Router (Handles /api/services and /api/pricing/services)
+// ==========================================
 
-// 1. GET /api/services - Public list of services
-router.get('/services', (req: Request, res: Response): void => {
+// GET /api/services
+function handleGetServices(req: Request, res: Response): void {
   try {
     const services = db.getAllServices();
     res.json({ services });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch services.' });
   }
-});
+}
 
-// 2. POST /api/services - Admin Add Service
-router.post('/services', (req: Request, res: Response): void => {
+// POST /api/services
+function handleCreateService(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -38,58 +34,73 @@ router.post('/services', (req: Request, res: Response): void => {
     const {
       name,
       code,
+      category = 'Crown',
       description,
       unitType = 'Per Tooth',
+      currency = 'INR',
       unitPriceINR,
       unitPriceUSD,
+      unitPriceEUR,
+      unitPriceGBP,
       taxPercent = 18,
       materials = [],
       shades = [],
-      standardTurnaroundHours = 24
+      standardTurnaroundHours = 24,
+      active = true,
+      featured = false
     } = req.body;
 
-    if (!name || !code || !unitPriceINR) {
-      res.status(400).json({ error: 'Name, code, and INR unit price are required.' });
+    if (!name || !code || unitPriceINR === undefined) {
+      res.status(400).json({ error: 'Service name, unique code, and base INR price are required.' });
       return;
     }
 
+    const cleanCode = code.toUpperCase().trim();
+    const existing = db.findServiceById(cleanCode);
+    if (existing) {
+      res.status(400).json({ error: `Service code "${cleanCode}" is already in use.` });
+      return;
+    }
+
+    const inrVal = Number(unitPriceINR);
     const newService: ServicePricing = {
       id: `srv-${Date.now()}`,
-      code: code.toUpperCase().trim(),
+      code: cleanCode,
       name: name.trim(),
+      category: category.trim(),
       description: description || '',
-      unitType,
-      unitPriceINR: Number(unitPriceINR),
-      unitPriceUSD: Number(unitPriceUSD || (unitPriceINR / 75).toFixed(2)),
-      taxPercent: Number(taxPercent),
+      unitType: unitType || 'Per Tooth',
+      currency: currency || 'INR',
+      unitPriceINR: inrVal,
+      unitPriceUSD: unitPriceUSD ? Number(unitPriceUSD) : Math.round(inrVal / 83 * 10) / 10,
+      unitPriceEUR: unitPriceEUR ? Number(unitPriceEUR) : Math.round(inrVal / 90 * 10) / 10,
+      unitPriceGBP: unitPriceGBP ? Number(unitPriceGBP) : Math.round(inrVal / 105 * 10) / 10,
+      taxPercent: Number(taxPercent) || 18,
       discountPercent: 0,
-      materials: materials.length ? materials : ['Zirconia Multi-Layer', 'Lithium Disilicate', 'PMMA'],
-      shades: shades.length ? shades : ['A1', 'A2', 'A3', 'B1', 'Bleach BL1'],
-      standardTurnaroundHours: Number(standardTurnaroundHours),
-      active: true,
-      featured: false
+      materials: Array.isArray(materials) && materials.length > 0 ? materials : ['Zirconia Multi-Layer', 'Lithium Disilicate (E-Max)'],
+      shades: Array.isArray(shades) && shades.length > 0 ? shades : ['A1', 'A2', 'A3', 'B1', 'Bleach BL1'],
+      standardTurnaroundHours: Number(standardTurnaroundHours) || 24,
+      active: Boolean(active),
+      isActive: Boolean(active),
+      featured: Boolean(featured),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
-    db.addService(newService);
-
-    db.logAudit({
+    db.addService(newService, {
       userId: user.id,
       userName: user.name,
-      userRole: user.role,
-      action: 'SERVICE_CREATED',
-      details: `Created new dental service: ${newService.name} (₹${newService.unitPriceINR})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
+      userRole: user.role
     });
 
-    res.status(201).json({ message: 'Service created successfully.', service: newService });
+    res.status(201).json({ message: 'Service added successfully.', service: newService });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create service.' });
   }
-});
+}
 
-// 3. PUT /api/services/:id - Admin Update Service
-router.put('/services/:id', (req: Request, res: Response): void => {
+// PUT /api/services/:id
+function handleUpdateService(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -97,30 +108,35 @@ router.put('/services/:id', (req: Request, res: Response): void => {
       return;
     }
 
-    const updated = db.updateService(req.params.id, req.body);
+    const { changeReason, ...updates } = req.body;
+
+    if (updates.unitPriceINR !== undefined) updates.unitPriceINR = Number(updates.unitPriceINR);
+    if (updates.unitPriceUSD !== undefined) updates.unitPriceUSD = Number(updates.unitPriceUSD);
+    if (updates.unitPriceEUR !== undefined) updates.unitPriceEUR = Number(updates.unitPriceEUR);
+    if (updates.unitPriceGBP !== undefined) updates.unitPriceGBP = Number(updates.unitPriceGBP);
+    if (updates.taxPercent !== undefined) updates.taxPercent = Number(updates.taxPercent);
+    if (updates.standardTurnaroundHours !== undefined) updates.standardTurnaroundHours = Number(updates.standardTurnaroundHours);
+
+    const updated = db.updateService(req.params.id, updates, {
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      reason: changeReason
+    });
+
     if (!updated) {
       res.status(404).json({ error: 'Service not found.' });
       return;
     }
 
-    db.logAudit({
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      action: 'SERVICE_UPDATED',
-      details: `Updated service ${updated.name}: Price ₹${updated.unitPriceINR}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
     res.json({ message: 'Service updated successfully.', service: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update service.' });
   }
-});
+}
 
-// 4. DELETE /api/services/:id - Admin Delete Service
-router.delete('/services/:id', (req: Request, res: Response): void => {
+// PATCH /api/services/:id/toggle
+function handleToggleService(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -128,30 +144,73 @@ router.delete('/services/:id', (req: Request, res: Response): void => {
       return;
     }
 
-    const ok = db.deleteService(req.params.id);
-    if (!ok) {
+    const toggled = db.toggleServiceActive(req.params.id, {
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role
+    });
+
+    if (!toggled) {
       res.status(404).json({ error: 'Service not found.' });
       return;
     }
 
-    db.logAudit({
+    res.json({
+      message: `Service "${toggled.name}" is now ${toggled.active ? 'Active' : 'Disabled'}.`,
+      service: toggled
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to toggle service.' });
+  }
+}
+
+// DELETE /api/services/:id
+function handleDeleteService(req: Request, res: Response): void {
+  try {
+    const user = getAuthenticatedUser(req);
+    if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
+      res.status(403).json({ error: 'Administrative permission required.' });
+      return;
+    }
+
+    const result = db.deleteService(req.params.id, {
       userId: user.id,
       userName: user.name,
-      userRole: user.role,
-      action: 'SERVICE_DELETED',
-      details: `Deleted service ID ${req.params.id}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
+      userRole: user.role
     });
 
-    res.json({ message: 'Service deleted.' });
+    if (!result.success) {
+      res.status(404).json({ error: result.reason || 'Service not found.' });
+      return;
+    }
+
+    if (result.reason === 'SERVICE_ARCHIVED_DUE_TO_CASES') {
+      res.json({
+        message: `Service has ${result.inUseCount} case(s) on record. It has been disabled/archived to maintain historical case pricing snapshots.`,
+        archived: true,
+        inUseCount: result.inUseCount
+      });
+      return;
+    }
+
+    res.json({ message: 'Service deleted permanently from database.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete service.' });
   }
-});
+}
 
-// 5. GET /api/offers - Promotional Offers List
-router.get('/offers', (req: Request, res: Response): void => {
+servicesRouter.get('/', handleGetServices);
+servicesRouter.post('/', handleCreateService);
+servicesRouter.put('/:id', handleUpdateService);
+servicesRouter.patch('/:id/toggle', handleToggleService);
+servicesRouter.delete('/:id', handleDeleteService);
+
+// ==========================================
+// Offers Router (Handles /api/offers and /api/pricing/offers)
+// ==========================================
+
+// GET /api/offers
+function handleGetOffers(req: Request, res: Response): void {
   try {
     const includeInactive = req.query.includeInactive === 'true';
     const offers = db.getAllOffers(includeInactive);
@@ -159,10 +218,10 @@ router.get('/offers', (req: Request, res: Response): void => {
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch offers.' });
   }
-});
+}
 
-// 6. POST /api/offers - Admin Create Offer
-router.post('/offers', (req: Request, res: Response): void => {
+// POST /api/offers
+function handleCreateOffer(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -182,38 +241,29 @@ router.post('/offers', (req: Request, res: Response): void => {
       isNewCustomerOnly = false,
       maxUsagePerCustomer = 1,
       startDate,
-      endDate,
-      active = true
+      endDate
     } = req.body;
 
     if (!code || !title) {
-      res.status(400).json({ error: 'Offer code and title are required.' });
-      return;
-    }
-
-    const cleanCode = code.toUpperCase().trim();
-    const existing = db.findOfferByCode(cleanCode, false);
-    if (existing) {
-      res.status(400).json({ error: `An offer with promo code "${cleanCode}" already exists.` });
+      res.status(400).json({ error: 'Promo code and offer title are required.' });
       return;
     }
 
     const newOffer: Offer = {
       id: `off-${Date.now()}`,
-      code: cleanCode,
+      code: code.toUpperCase().trim(),
       title: title.trim(),
       description: description || '',
-      offerType: (offerType === 'BUY_X_GET_Y' || offerType === 'PERCENTAGE' || offerType === 'FREE_UNITS') ? offerType : 'FREE_UNITS',
+      offerType: offerType as any,
       buyQuantityRequired: Math.max(1, Number(buyQuantityRequired) || 1),
-      freeUnitsCount: Math.max(0, Number(freeUnitsCount) || 0),
+      freeUnitsCount: Number(freeUnitsCount) || 0,
       percentageDiscount: Number(percentageDiscount) || 0,
       eligibleServiceCodes: Array.isArray(eligibleServiceCodes) ? eligibleServiceCodes : [],
       isNewCustomerOnly: Boolean(isNewCustomerOnly),
       maxUsagePerCustomer: Math.max(1, Number(maxUsagePerCustomer) || 1),
-      active: active !== undefined ? Boolean(active) : true,
+      active: true,
       startDate: startDate || new Date().toISOString(),
-      endDate: endDate || new Date(Date.now() + 365 * 86400000).toISOString(),
-      timesRedeemed: 0
+      endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
     };
 
     db.addOffer(newOffer);
@@ -223,7 +273,7 @@ router.post('/offers', (req: Request, res: Response): void => {
       userName: user.name,
       userRole: user.role,
       action: 'OFFER_CREATED',
-      details: `Created promotion: ${newOffer.code} - ${newOffer.title} (${newOffer.offerType})`,
+      details: `Created promotion: ${newOffer.code} (${newOffer.title})`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
@@ -232,10 +282,10 @@ router.post('/offers', (req: Request, res: Response): void => {
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create offer.' });
   }
-});
+}
 
-// 7. PUT /api/offers/:id - Admin Update Offer
-router.put('/offers/:id', (req: Request, res: Response): void => {
+// PUT /api/offers/:id
+function handleUpdateOffer(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -297,10 +347,10 @@ router.put('/offers/:id', (req: Request, res: Response): void => {
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update offer.' });
   }
-});
+}
 
-// 8. PATCH /api/offers/:id/toggle - Admin Toggle Active/Inactive
-router.patch('/offers/:id/toggle', (req: Request, res: Response): void => {
+// PATCH /api/offers/:id/toggle
+function handleToggleOffer(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -329,10 +379,10 @@ router.patch('/offers/:id/toggle', (req: Request, res: Response): void => {
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to toggle offer status.' });
   }
-});
+}
 
-// 9. DELETE /api/offers/:id - Admin Delete Offer
-router.delete('/offers/:id', (req: Request, res: Response): void => {
+// DELETE /api/offers/:id
+function handleDeleteOffer(req: Request, res: Response): void {
   try {
     const user = getAuthenticatedUser(req);
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
@@ -363,10 +413,84 @@ router.delete('/offers/:id', (req: Request, res: Response): void => {
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete offer.' });
   }
+}
+
+offersRouter.get('/', handleGetOffers);
+offersRouter.post('/', handleCreateOffer);
+offersRouter.put('/:id', handleUpdateOffer);
+offersRouter.patch('/:id/toggle', handleToggleOffer);
+offersRouter.delete('/:id', handleDeleteOffer);
+
+// ==========================================
+// Pricing Router (Handles /api/pricing)
+// ==========================================
+
+// GET /api/pricing/tax-settings
+pricingRouter.get('/tax-settings', (req: Request, res: Response): void => {
+  try {
+    const taxSettings = db.getTaxSettings();
+    res.json({ taxSettings });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch tax settings.' });
+  }
 });
 
-// 10. POST /api/pricing/calculate - Robust Server-side Unit Price & Offer Calculation
-router.post('/calculate', (req: Request, res: Response): void => {
+// PUT /api/pricing/tax-settings
+pricingRouter.put('/tax-settings', (req: Request, res: Response): void => {
+  try {
+    const user = getAuthenticatedUser(req);
+    if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
+      res.status(403).json({ error: 'Administrative permission required.' });
+      return;
+    }
+
+    const { taxEnabled, taxName, taxPercent } = req.body;
+    const current = db.getTaxSettings();
+    const updated = db.updateTaxSettings({
+      taxEnabled: taxEnabled !== undefined ? Boolean(taxEnabled) : current.taxEnabled,
+      taxName: taxName !== undefined ? String(taxName).trim() : current.taxName,
+      taxPercent: taxPercent !== undefined ? Number(taxPercent) : current.taxPercent
+    });
+
+    db.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: 'TAX_SETTINGS_UPDATED',
+      details: `Updated tax settings: ${updated.taxName} (${updated.taxPercent}%), Enabled: ${updated.taxEnabled}`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.json({ message: 'Tax settings updated successfully.', taxSettings: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update tax settings.' });
+  }
+});
+
+// GET /api/pricing/history - Pricing audit history
+pricingRouter.get('/history', (req: Request, res: Response): void => {
+  try {
+    const user = getAuthenticatedUser(req);
+    if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
+      res.status(403).json({ error: 'Administrative permission required to view pricing history.' });
+      return;
+    }
+
+    const { serviceId } = req.query;
+    let history = db.getAllPricingHistory();
+    if (serviceId && typeof serviceId === 'string') {
+      history = history.filter(h => h.serviceId === serviceId || h.serviceCode.toUpperCase() === serviceId.toUpperCase());
+    }
+
+    res.json({ history });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch pricing history.' });
+  }
+});
+
+// POST /api/pricing/calculate - Robust Server-side Unit Price & Offer Calculation
+pricingRouter.post('/calculate', (req: Request, res: Response): void => {
   try {
     const { serviceId, quantity = 1, offerCode } = req.body;
     const authUser = getAuthenticatedUser(req);
@@ -378,63 +502,60 @@ router.post('/calculate', (req: Request, res: Response): void => {
 
     const service = db.findServiceById(serviceId);
     if (!service) {
-      res.status(404).json({ error: 'Service not found.' });
+      res.status(404).json({ error: 'Service not found in master catalog.' });
       return;
     }
 
-    const units = Math.max(1, Number(quantity) || 1);
-    const unitPrice = service.unitPriceINR;
-    const subtotal = unitPrice * units;
-    let serviceDiscountAmount = (subtotal * (service.discountPercent || 0)) / 100;
-
-    let offerDiscountAmount = 0;
-    let appliedOffer: Offer | null = null;
-    let offerValidationMessage = '';
-
-    if (offerCode && typeof offerCode === 'string' && offerCode.trim()) {
-      const evaluation = evaluateOffer({
-        offerCode: offerCode.trim(),
-        service,
-        quantity: units,
-        user: authUser
-      });
-
-      offerValidationMessage = evaluation.message;
-      if (evaluation.isValid && evaluation.appliedOffer) {
-        appliedOffer = evaluation.appliedOffer;
-        offerDiscountAmount = evaluation.discountAmount;
-      }
-    }
-
+    const qty = Math.max(1, Number(quantity) || 1);
     const taxSettings = db.getTaxSettings();
-    const effectiveTaxPercent = taxSettings.taxEnabled ? (service.taxPercent !== undefined ? service.taxPercent : taxSettings.taxPercent) : 0;
-    const taxableAmount = Math.max(0, subtotal - serviceDiscountAmount - offerDiscountAmount);
-    const taxAmount = Math.round((taxableAmount * (effectiveTaxPercent / 100)) * 100) / 100;
-    const finalTotalAmount = Math.max(0, taxableAmount + taxAmount);
+
+    const offerResult = evaluateOffer({
+      offerCode,
+      service,
+      quantity: qty,
+      user: authUser
+    });
+
+    const subtotal = service.unitPriceINR * qty;
+    const discount = offerResult.discountAmount || 0;
+    const chargeableAmount = Math.max(0, subtotal - discount);
+    const effectiveTaxRate = taxSettings.taxEnabled ? (taxSettings.taxPercent ?? service.taxPercent) : 0;
+    const taxAmount = Math.round(chargeableAmount * (effectiveTaxRate / 100));
+    const finalTotal = chargeableAmount + taxAmount;
 
     res.json({
-      serviceName: service.name,
-      serviceCode: service.code,
-      unitType: service.unitType,
-      unitPrice,
-      currency: 'INR',
-      unitsQuantity: units,
-      subtotal,
-      discountAmount: serviceDiscountAmount,
-      offerDiscountAmount,
-      appliedOfferCode: appliedOffer?.code,
-      appliedOfferTitle: appliedOffer?.title,
-      offerValidationMessage,
-      isOfferValid: Boolean(appliedOffer),
-      taxPercent: effectiveTaxPercent,
-      taxName: taxSettings.taxName,
-      taxEnabled: taxSettings.taxEnabled,
-      taxAmount,
-      finalTotalAmount
+      service: {
+        id: service.id,
+        name: service.name,
+        code: service.code,
+        unitType: service.unitType,
+        unitPriceINR: service.unitPriceINR,
+        unitPriceUSD: service.unitPriceUSD,
+        taxPercent: effectiveTaxRate
+      },
+      quantity: qty,
+      subtotalINR: subtotal,
+      offerCalculation: {
+        isValidOffer: offerResult.isValid,
+        offerCode: offerResult.appliedOffer?.code || null,
+        offerTitle: offerResult.appliedOffer?.title || null,
+        message: offerResult.message,
+        freeUnitsGiven: offerResult.freeUnitsCount,
+        discountAmountINR: offerResult.discountAmount,
+        chargeableUnits: Math.max(0, qty - offerResult.freeUnitsCount),
+        chargeableAmountINR: chargeableAmount
+      },
+      taxAmountINR: taxAmount,
+      finalTotalINR: finalTotal,
+      taxSettings
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Price calculation failed.' });
+    res.status(500).json({ error: err.message || 'Pricing calculation failed.' });
   }
 });
 
-export default router;
+// Mount services and offers subroutes inside pricing router as well
+pricingRouter.use('/services', servicesRouter);
+pricingRouter.use('/offers', offersRouter);
+
+export default pricingRouter;

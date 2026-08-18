@@ -18,6 +18,71 @@ export function getAuthenticatedUser(req: Request): User | null {
 }
 
 // 1. Customer Registration
+router.post('/firebase-sync', (req: Request, res: Response): void => {
+  try {
+    const { uid, email, name, photoURL } = req.body;
+    if (!email) {
+      res.status(400).json({ error: 'Email is required for Firebase sync.' });
+      return;
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    let user = db.findUserByEmail(cleanEmail);
+    if (!user) {
+      const isSuperAdminEmail = cleanEmail === 'anuragnishad895@gmail.com' || cleanEmail === 'aniketghosh941111@gmail.com';
+      user = {
+        id: uid ? `usr-fb-${uid}` : `usr-cust-${Date.now()}`,
+        name: name || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        passwordHash: 'GOOGLE_AUTH_FIREBASE',
+        role: isSuperAdminEmail ? 'SUPER_ADMIN' : 'DOCTOR_LAB',
+        phone: '',
+        clinicOrLabName: `${name || cleanEmail.split('@')[0]}'s Practice`,
+        accountType: 'DOCTOR',
+        country: 'India',
+        address: '',
+        isActive: true,
+        isEmailVerified: true,
+        forcePasswordChange: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      db.addUser(user);
+
+      db.logAudit({
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        action: 'GOOGLE_SIGNIN_REGISTRATION',
+        details: `New account via Google Sign-In with Firebase Auth: ${user.email}`,
+        ipAddress: req.ip || '127.0.0.1',
+        result: 'SUCCESS'
+      });
+    }
+
+    const token = `cd_session_${user.id}`;
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        clinicOrLabName: user.clinicOrLabName,
+        accountType: user.accountType,
+        country: user.country,
+        address: user.address,
+        isEmailVerified: user.isEmailVerified,
+        forcePasswordChange: user.forcePasswordChange
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Firebase sync failed.' });
+  }
+});
+
+// 1. Customer Registration
 router.post('/register', (req: Request, res: Response): void => {
   try {
     const {

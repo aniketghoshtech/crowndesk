@@ -24,9 +24,10 @@ import {
 interface DesignerDashboardProps {
   initialCaseId?: string;
   onNavigate: (view: string, data?: any) => void;
+  onOpenAiChat?: (caseContext?: any) => void;
 }
 
-export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCaseId, onNavigate }) => {
+export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCaseId, onNavigate, onOpenAiChat }) => {
   const { user } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);

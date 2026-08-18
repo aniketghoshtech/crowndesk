@@ -6,13 +6,14 @@ import { CaseTimelineView } from '../../components/case/CaseTimelineView';
 import { Dental3DViewer } from '../../components/3d/Dental3DViewer';
 import { CaseFilesList } from '../../components/case/CaseFilesList';
 import { CaseChatter } from '../../components/case/CaseChatter';
-import { RazorpayPaymentModal } from '../../components/payment/RazorpayPaymentModal';
+import { UpiPaymentModal } from '../../components/payment/UpiPaymentModal';
 import { InvoiceModal } from '../../components/payment/InvoiceModal';
 import {
   PlusCircle,
   Search,
   Filter,
   CreditCard,
+  QrCode,
   Download,
   FileText,
   Clock,
@@ -27,11 +28,13 @@ import {
 interface CustomerDashboardProps {
   initialCaseId?: string;
   onNavigate: (view: string, data?: any) => void;
+  onOpenAiChat?: (caseContext?: any) => void;
 }
 
 export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
   initialCaseId,
-  onNavigate
+  onNavigate,
+  onOpenAiChat
 }) => {
   const { user } = useAuth();
   const [cases, setCases] = useState<CaseRecord[]>([]);
@@ -158,8 +161,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
       c.serviceName.toLowerCase().includes(searchFilter.toLowerCase());
 
     if (statusFilter === 'ALL') return matchesSearch;
-    if (statusFilter === 'ACTIVE') return matchesSearch && c.status !== 'DELIVERED' && c.status !== 'CLOSED';
-    if (statusFilter === 'DELIVERED') return matchesSearch && (c.status === 'DELIVERED' || c.status === 'CLOSED');
+    if (statusFilter === 'ACTIVE') return matchesSearch && c.status !== 'COMPLETED';
+    if (statusFilter === 'DELIVERED') return matchesSearch && c.status === 'COMPLETED';
     if (statusFilter === 'UNPAID') return matchesSearch && c.paymentStatus !== 'PAID';
     return matchesSearch;
   });
@@ -309,13 +312,35 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
 
                   {/* Payment & Invoice Buttons */}
                   <div className="flex items-center gap-2">
+                    {onOpenAiChat && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenAiChat({
+                            caseId: selectedCase.id,
+                            serviceCode: selectedCase.serviceCode,
+                            serviceName: selectedCase.serviceName,
+                            status: selectedCase.status,
+                            teeth: selectedCase.teethNumbers,
+                            notes: selectedCase.clinicalNotes,
+                            patient: selectedCase.patientName
+                          })
+                        }
+                        className="px-3.5 py-2 bg-gradient-to-r from-cyan-950 to-blue-950 hover:from-cyan-900 hover:to-blue-900 border border-cyan-500/40 rounded-xl text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+                        title="Analyze case margins, materials, and clinical parameters with Gemini"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                        <span>Ask Gemini CAD</span>
+                      </button>
+                    )}
+
                     {selectedCase.paymentStatus !== 'PAID' ? (
                       <button
                         onClick={() => setPaymentModalOpen(true)}
                         className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition transform active:scale-95 animate-pulse"
                       >
-                        <CreditCard className="w-4 h-4" />
-                        <span>Pay ₹{selectedCase.finalTotalAmount} & Unlock STL</span>
+                        <QrCode className="w-4 h-4" />
+                        <span>Pay ₹{selectedCase.finalTotalAmount} via UPI & Unlock</span>
                       </button>
                     ) : (
                       <button
@@ -468,9 +493,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
         </div>
       </div>
 
-      {/* Payment Checkout Modal */}
+      {/* UPI Payment Modal */}
       {paymentModalOpen && selectedCase && (
-        <RazorpayPaymentModal
+        <UpiPaymentModal
           caseRecord={selectedCase}
           onClose={() => setPaymentModalOpen(false)}
           onPaymentSuccess={updatedCase => {

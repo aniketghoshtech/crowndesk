@@ -16,6 +16,7 @@ import { CaseTimelineView } from '../../components/case/CaseTimelineView';
 import { PaymentStorageSettings } from './PaymentStorageSettings';
 import { PaymentTransactionsLedger } from './PaymentTransactionsLedger';
 import { AdminOffersManager } from './AdminOffersManager';
+import { AdminPricingManagement } from './AdminPricingManagement';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -65,6 +66,7 @@ interface AdminDashboardProps {
   initialCaseId?: string;
   initialTab?: AdminTab;
   onNavigate: (view: string, data?: any) => void;
+  onOpenAiChat?: (caseContext?: any) => void;
 }
 
 export type AdminTab =
@@ -73,6 +75,7 @@ export type AdminTab =
   | 'CUSTOMERS'
   | 'EMPLOYEES'
   | 'DESIGNERS'
+  | 'PRICING_SERVICES'
   | 'SERVICES'
   | 'PRICING'
   | 'OFFERS'
@@ -347,9 +350,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     { id: 'CUSTOMERS', label: 'Customers', icon: Users, count: customers.length },
     { id: 'EMPLOYEES', label: 'Employees', icon: UserCog, count: employees.length },
     { id: 'DESIGNERS', label: 'Designers', icon: Palette, count: designers.length },
-    { id: 'SERVICES', label: 'Services', icon: Sparkles, count: services.length },
-    { id: 'PRICING', label: 'Pricing', icon: DollarSign },
-    { id: 'OFFERS', label: 'Offers', icon: Gift, count: offers.length },
+    { id: 'PRICING_SERVICES', label: 'Pricing & Services', icon: DollarSign, count: services.length },
     { id: 'PAYMENTS', label: 'Payments', icon: CreditCard },
     { id: 'INVOICES', label: 'Invoices', icon: Receipt, count: invoices.length },
     { id: 'FILES', label: 'Files', icon: FileBox, count: filesCatalog.length },
@@ -1200,83 +1201,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 6. SERVICES TAB */}
+      {/* 6. PRICING & SERVICES TAB (All Services, Add Service, Edit Service, Offers, Tax Settings, History) */}
       {/* ========================================================================= */}
-      {activeTab === 'SERVICES' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex justify-between items-center pb-4 border-b border-slate-800">
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">Dental CAD Services Catalog</h2>
-              <p className="text-xs text-slate-400">Configure catalog offerings, materials, and clinical delivery SLAs</p>
-            </div>
-            <button
-              onClick={() => setCreateServiceModal(true)}
-              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Add CAD Service</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {services.map(s => (
-              <div key={s.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">{s.code}</span>
-                  <span className="text-[11px] text-slate-400">{s.standardTurnaroundHours}h Delivery</span>
-                </div>
-                <div className="font-bold text-slate-100 text-sm">{s.name}</div>
-                <p className="text-slate-400 text-[11px]">{s.description}</p>
-                <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-slate-300 font-bold">
-                  <span className="text-purple-300 font-mono text-sm">₹{s.unitPriceINR} / unit</span>
-                  <span className="text-slate-400 font-mono">${s.unitPriceUSD} USD</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 7. PRICING TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'PRICING' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
-          <div className="pb-4 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-slate-100">Pricing Rate Cards & GST Tax Parameters</h2>
-            <p className="text-xs text-slate-400">Unit base rates, international currency conversion, and 18% GST rules</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">Standard CAD Unit Rate</div>
-              <div className="text-2xl font-black text-cyan-400 font-mono">₹350 INR</div>
-              <div className="text-[10px] text-slate-500">Includes anatomical design & Exocad validation</div>
-            </div>
-
-            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">GST Tax Compliance</div>
-              <div className="text-2xl font-black text-purple-400 font-mono">18.0%</div>
-              <div className="text-[10px] text-slate-500">Auto-calculated and itemized on invoice PDF</div>
-            </div>
-
-            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-2">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">Global USD Rate</div>
-              <div className="text-2xl font-black text-emerald-400 font-mono">$8.00 USD</div>
-              <div className="text-[10px] text-slate-500">Stripe international payments enabled</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 8. OFFERS TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'OFFERS' && (
-        <AdminOffersManager
-          offers={offers}
-          services={services}
-          onRefresh={fetchAllData}
+      {(activeTab === 'PRICING_SERVICES' || activeTab === 'SERVICES' || activeTab === 'PRICING' || activeTab === 'OFFERS') && (
+        <AdminPricingManagement
+          initialSubTab={
+            activeTab === 'OFFERS'
+              ? 'OFFERS'
+              : activeTab === 'PRICING'
+              ? 'TAX_SETTINGS'
+              : 'ALL_SERVICES'
+          }
         />
       )}
 

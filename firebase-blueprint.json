@@ -41,7 +41,8 @@
         "tax": { "type": "number" },
         "discount": { "type": "number" },
         "total": { "type": "number" },
-        "paymentStatus": { "type": "string", "enum": ["UNPAID", "PAID", "REFUNDED", "PENDING_VERIFICATION"] },
+        "paymentStatus": { "type": "string", "enum": ["PENDING", "UNDER_REVIEW", "PAID", "REJECTED", "REFUNDED", "UNPAID", "PENDING_VERIFICATION"] },
+        "finalStlUnlocked": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -49,21 +50,27 @@
     },
     "PaymentRecord": {
       "title": "PaymentRecord",
-      "description": "Financial ledger record for case transactions",
+      "description": "UPI-exclusive financial ledger record for case transactions",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "caseId": { "type": "string" },
         "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
         "amount": { "type": "number" },
         "currency": { "type": "string" },
-        "gateway": { "type": "string" },
-        "status": { "type": "string", "enum": ["SUCCESS", "PENDING", "PENDING_VERIFICATION", "FAILED", "REFUNDED"] },
-        "transactionId": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["UPI"] },
+        "upiTransactionId": { "type": "string" },
+        "paymentScreenshot": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "UNDER_REVIEW", "PAID", "REJECTED", "REFUNDED"] },
+        "rejectionReason": { "type": "string" },
+        "verifiedBy": { "type": "string" },
+        "verifiedAt": { "type": "string" },
         "invoiceId": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
       },
-      "required": ["caseId", "customerId", "amount", "status"]
+      "required": ["caseId", "customerId", "amount", "status", "paymentMethod"]
     },
     "AuditLog": {
       "title": "AuditLog",
@@ -80,6 +87,23 @@
         "timestamp": { "type": "string" }
       },
       "required": ["action", "actor", "timestamp"]
+    },
+    "AIChatSession": {
+      "title": "AIChatSession",
+      "description": "Gemini AI multi-turn conversational session history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "model": { "type": "string" },
+        "role": { "type": "string" },
+        "messages": { "type": "string" },
+        "searchGroundingEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "model"]
     }
   },
   "firestore": {
@@ -93,11 +117,15 @@
     },
     "/payments/{paymentDocId}": {
       "schema": { "$ref": "#/entities/PaymentRecord" },
-      "description": "Payment records for case transactions"
+      "description": "UPI payment records for case transactions"
     },
     "/audit_logs/{logId}": {
       "schema": { "$ref": "#/entities/AuditLog" },
       "description": "Immutable audit trails for administrative tracking"
+    },
+    "/ai_chats/{chatId}": {
+      "schema": { "$ref": "#/entities/AIChatSession" },
+      "description": "Gemini multi-turn chat sessions and conversation logs"
     }
   }
 }
