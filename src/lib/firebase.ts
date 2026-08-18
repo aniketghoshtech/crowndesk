@@ -15,7 +15,17 @@ import {
   addDoc,
   serverTimestamp
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+// Environment variables with fallback to prevent build failure on Vercel/GitHub
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoFallbackKeyForBuild123456',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'crowndesk-app.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'crowndesk-app',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'crowndesk-app.appspot.com',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1029384756',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1029384756:web:9876543210abcdef',
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)'
+};
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
