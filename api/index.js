@@ -6294,19 +6294,9 @@ function createExpressApp() {
   return app2;
 }
 var app = createExpressApp();
-
-// api/index.ts
-function handler(req, res) {
-  try {
-    if (req.url && req.url.startsWith("/api/index")) {
-      req.url = req.url.replace("/api/index", "/api") || "/api/health";
-    }
-    return app(req, res);
-  } catch (err) {
-    console.error("Serverless Handler Error:", err);
-    res.status(500).json({ error: err?.message || "Serverless Handler Exception" });
-  }
-}
+var app_default = app;
 export {
-  handler as default
+  app,
+  createExpressApp,
+  app_default as default
 };
