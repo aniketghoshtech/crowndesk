@@ -64,13 +64,17 @@ export function createExpressApp() {
   app.get('/api/health', healthHandler);
   app.get('/health', healthHandler);
 
-  // Helper to mount routes with and without /api prefix
-  const mountRoutes = (prefix: string, router: express.Router | express.RequestHandler) => {
-    app.use(`/api/${prefix}`, router);
-    app.use(`/${prefix}`, router);
+  // Safe router mounting helper (Router undefined হলেও সার্ভার ক্র্যাশ করবে না)
+  const mountRoutes = (prefix: string, router: any) => {
+    if (router && (typeof router === 'function' || typeof router.use === 'function')) {
+      app.use(`/api/${prefix}`, router);
+      app.use(`/${prefix}`, router);
+    } else {
+      console.warn(`[Route Warning] Router for prefix "/${prefix}" is not mounted.`);
+    }
   };
 
-  // Mount API Endpoints
+  // Mount API Endpoints safely
   mountRoutes('auth', authRoutes);
   mountRoutes('cases', caseRoutes);
   mountRoutes('files', fileRoutes);
@@ -85,12 +89,14 @@ export function createExpressApp() {
   mountRoutes('gemini', geminiRoutes);
 
   // Direct root sitemap
-  app.get('/sitemap.xml', (req, res, next) => {
-    req.url = '/sitemap.xml';
-    seoRoutes(req, res, next);
-  });
+  if (seoRoutes) {
+    app.get('/sitemap.xml', (req, res, next) => {
+      req.url = '/sitemap.xml';
+      seoRoutes(req, res, next);
+    });
+  }
 
-  // Global Error Handler
+  // Global Error Handler (Guarantees JSON error response)
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Express error captured:', err);
     if (res.headersSent) {
@@ -107,4 +113,4 @@ export function createExpressApp() {
 }
 
 export const app = createExpressApp();
-export default app; // ✅ CRITICAL: Vercel serverless (api/index.ts) এর জন্য এটি প্রয়োজন
+export default app;
