@@ -5,12 +5,15 @@ let supabaseClient: SupabaseClient | null = null;
 export function getSupabaseAdmin(): SupabaseClient | null {
   if (supabaseClient) return supabaseClient;
 
-  const url = process.env.SUPABASE_URL;
+  const rawUrl = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-  if (url && key) {
+  if (rawUrl && key) {
     try {
-      supabaseClient = createClient(url, key, {
+      // URL-এর শেষে /rest/v1 বা অতিরিক্ত স্ল্যাশ থাকলে তা স্বয়ংক্রিয়ভাবে ক্লিন করে নেওয়া হচ্ছে
+      const cleanUrl = rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+
+      supabaseClient = createClient(cleanUrl, key.trim(), {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
@@ -82,6 +85,7 @@ export async function downloadFromSupabaseStorage(
     const arrayBuffer = await data.arrayBuffer();
     return { data: Buffer.from(arrayBuffer) };
   } catch (err: any) {
+    console.error('Supabase download exception:', err);
     return { data: null, error: err.message };
   }
 }

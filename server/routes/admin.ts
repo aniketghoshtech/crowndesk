@@ -23,19 +23,20 @@ router.get('/analytics', requireAdmin, (req: Request, res: Response): void => {
     const payments = db.getAllPayments();
     const users = db.getAllUsers();
 
-    // 10 Core KPIs requested
+    // 10 Core KPIs
     const totalCases = cases.length;
     const newCases = cases.filter(c => c.status === 'NEW').length;
     const activeCases = cases.filter(c => ['RECEIVED', 'ASSIGNED', 'IN_DESIGN', 'QC', 'APPROVAL', 'REVISION'].includes(c.status)).length;
     const completedCases = cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
     const pendingCases = cases.filter(c => !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
 
-    const totalRevenue = payments.reduce((acc, p) => p.status === 'SUCCESS' ? acc + p.amount : acc, 0);
+    // Fixed: Account for both PAID and SUCCESS payment records
+    const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
     
     // Today's revenue calculation
     const todayStr = new Date().toISOString().split('T')[0];
     const todayRevenue = payments
-      .filter(p => p.status === 'SUCCESS' && (p.createdAt?.startsWith(todayStr) || p.createdAt?.includes(todayStr)))
+      .filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (p.createdAt?.startsWith(todayStr) || p.createdAt?.includes(todayStr)))
       .reduce((acc, p) => acc + p.amount, 0);
 
     const pendingPaymentCases = cases.filter(c => c.paymentStatus === 'PENDING');
@@ -82,7 +83,7 @@ router.get('/analytics', requireAdmin, (req: Request, res: Response): void => {
     const serviceCounts: Record<string, number> = {};
     cases.forEach(c => {
       const name = c.serviceName || 'Crown';
-      serviceCounts[name] = (serviceCounts[name] || 0) + c.unitsQuantity;
+      serviceCounts[name] = (serviceCounts[name] || 0) + (c.unitsQuantity || 1);
     });
 
     const totalUnitsMilled = cases.reduce((acc, c) => acc + (c.unitsQuantity || 1), 0);
@@ -161,7 +162,8 @@ router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
       return;
     }
 
-    const existing = db.findUserByEmail(email);
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = db.findUserByEmail(cleanEmail);
     if (existing) {
       res.status(400).json({ error: 'An account with this email already exists.' });
       return;
@@ -172,7 +174,7 @@ router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
     const newEmp: User = {
       id: `usr-emp-${Date.now()}`,
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       passwordHash: hashPassword(initialPassword),
       role: assignedRole as any,
       phone: phone || '',
@@ -296,7 +298,7 @@ router.delete('/employees/:id', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 4. PATCH /api/admin/employees/:id/toggle-status - Activate / Deactivate
+// 4. PATCH /api/admin/employees/:id/toggle-status
 router.patch('/employees/:id/toggle-status', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -326,7 +328,7 @@ router.patch('/employees/:id/toggle-status', requireAdmin, (req: Request, res: R
   }
 });
 
-// 4b. POST /api/admin/employees/:id/reset-password - Admin resets password
+// 4b. POST /api/admin/employees/:id/reset-password
 router.post('/employees/:id/reset-password', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -389,7 +391,7 @@ router.get('/customers', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 5b. POST /api/admin/customers - Create New Customer (Doctor / Dental Lab)
+// 5b. POST /api/admin/customers - Create New Customer
 router.post('/customers', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -400,7 +402,8 @@ router.post('/customers', requireAdmin, (req: Request, res: Response): void => {
       return;
     }
 
-    const existing = db.findUserByEmail(email);
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = db.findUserByEmail(cleanEmail);
     if (existing) {
       res.status(400).json({ error: 'An account with this email already exists.' });
       return;
@@ -409,7 +412,7 @@ router.post('/customers', requireAdmin, (req: Request, res: Response): void => {
     const newCust: User = {
       id: `usr-doc-${Date.now()}`,
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       passwordHash: hashPassword(initialPassword),
       role: 'DOCTOR_LAB',
       phone: phone || '',
@@ -523,13 +526,14 @@ router.delete('/customers/:id', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 5e. POST /api/admin/cases - Admin Creates Case for any Customer
+// 5e. POST /api/admin/cases - Admin Creates Case
 router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
     const {
       customerId,
       patientName,
+      patientRef,
       doctorName,
       serviceId,
       serviceName,
@@ -543,8 +547,9 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
       assignedDesignerId
     } = req.body;
 
-    if (!patientName || !serviceName) {
-      res.status(400).json({ error: 'Patient name and Service name are required.' });
+    const targetPatient = patientName || patientRef;
+    if (!targetPatient || (!serviceName && !serviceId)) {
+      res.status(400).json({ error: 'Patient name and Service are required.' });
       return;
     }
 
@@ -576,8 +581,8 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
       customerEmail: customer ? customer.email : 'client@crowndesk.com',
       customerPhone: customer ? customer.phone : '',
       doctorName: doctorName || (customer ? customer.name : 'Dr. Client'),
-      patientName: patientName.trim(),
-      patientRef: patientName.trim(),
+      patientName: targetPatient.trim(),
+      patientRef: targetPatient.trim(),
       serviceId: service ? service.id : 'srv-crown',
       serviceName: serviceName || (service ? service.name : 'Crown'),
       serviceCode: service ? service.code : 'CROWN',
@@ -634,7 +639,7 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
       userRole: adminUser.role,
       action: 'ADMIN_CASE_CREATED',
       caseId: newCaseId,
-      details: `Admin ${adminUser.name} created new case ${newCaseId} for patient ${patientName}`,
+      details: `Admin ${adminUser.name} created new case ${newCaseId} for patient ${targetPatient}`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
@@ -659,9 +664,9 @@ router.put('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
     const allowedFields = [
       'patientName', 'patientRef', 'doctorName', 'customerName', 'customerClinic',
       'serviceId', 'serviceName', 'serviceCode', 'material', 'shade', 'unitsQuantity',
-      'teethNumbers', 'instructions', 'dueDate', 'priority', 'status',
+      'teeth', 'teethNumbers', 'instructions', 'dueDate', 'priority', 'status',
       'assignedDesignerId', 'assignedDesignerName', 'paymentStatus', 'subtotal',
-      'taxAmount', 'finalTotalAmount', 'finalStlUnlocked'
+      'taxAmount', 'finalTotalAmount', 'finalStlUnlocked', 'files'
     ];
 
     allowedFields.forEach(f => {
@@ -732,7 +737,7 @@ router.delete('/cases/:id', requireAdmin, (req: Request, res: Response): void =>
   }
 });
 
-// 6. GET /api/admin/audit-logs - Security Audit Trail
+// 6. GET /api/admin/audit-logs
 router.get('/audit-logs', requireAdmin, (req: Request, res: Response): void => {
   try {
     const raw = db.getRawData();
@@ -742,7 +747,7 @@ router.get('/audit-logs', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 7. GET /api/admin/payment-settings - Retrieve Masked Payment Settings (Security Rule: Secrets Masked)
+// 7. GET /api/admin/payment-settings
 router.get('/payment-settings', requireAdmin, (req: Request, res: Response): void => {
   try {
     const maskedSettings = db.getMaskedPaymentSettings();
@@ -752,7 +757,7 @@ router.get('/payment-settings', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 8. PUT /api/admin/payment-settings - Update Payment Gateways & Policies Securely
+// 8. PUT /api/admin/payment-settings
 router.put('/payment-settings', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -778,7 +783,7 @@ router.put('/payment-settings', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 9. POST /api/admin/payment-settings/test-connection - Test UPI Merchant Health & Validation
+// 9. POST /api/admin/payment-settings/test-connection
 router.post('/payment-settings/test-connection', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -825,7 +830,7 @@ router.post('/payment-settings/test-connection', requireAdmin, (req: Request, re
   }
 });
 
-// 10. GET /api/admin/payments - List All Payments with Filtering & Search
+// 10. GET /api/admin/payments
 router.get('/payments', requireAdmin, (req: Request, res: Response): void => {
   try {
     const { status, search } = req.query;
@@ -998,11 +1003,11 @@ function handleVerifyPayment(req: Request, res: Response): void {
   }
 }
 
-// 11. POST /api/admin/payments/:id/verify and /approve
+// 11. Verify / Approve Payments
 router.post('/payments/:id/verify', requireAdmin, handleVerifyPayment);
 router.post('/payments/:id/approve', requireAdmin, handleVerifyPayment);
 
-// 12. POST /api/admin/payments/:id/reject - Reject UPI Payment with Reason
+// 12. Reject Payment
 router.post('/payments/:id/reject', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -1071,7 +1076,7 @@ router.post('/payments/:id/reject', requireAdmin, (req: Request, res: Response):
   }
 });
 
-// 13. POST /api/admin/payments/:id/refund - Issue Refund
+// 13. Refund Payment
 router.post('/payments/:id/refund', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -1136,7 +1141,7 @@ router.post('/payments/:id/refund', requireAdmin, (req: Request, res: Response):
   }
 });
 
-// 14. GET /api/admin/storage-settings - Retrieve Masked Cloud Storage Config
+// 14. GET /api/admin/storage-settings
 router.get('/storage-settings', requireAdmin, (req: Request, res: Response): void => {
   try {
     res.json({ storageConfig: db.getMaskedStorageConfig() });
@@ -1145,7 +1150,7 @@ router.get('/storage-settings', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 15. PUT /api/admin/storage-settings - Update Cloud Storage Configuration
+// 15. PUT /api/admin/storage-settings
 router.put('/storage-settings', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -1168,7 +1173,7 @@ router.put('/storage-settings', requireAdmin, (req: Request, res: Response): voi
   }
 });
 
-// 16. POST /api/admin/storage-settings/test-connection - Test Cloud Storage Provider Bucket Access
+// 16. POST /api/admin/storage-settings/test-connection
 router.post('/storage-settings/test-connection', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -1233,7 +1238,7 @@ router.post('/storage-settings/test-connection', requireAdmin, (req: Request, re
   }
 });
 
-// 17. SMTP Config
+// 17. SMTP Settings
 router.get('/smtp-settings', requireAdmin, (req: Request, res: Response): void => {
   res.json({ smtpConfig: db.getSMTPConfig() });
 });
@@ -1247,7 +1252,7 @@ router.put('/smtp-settings', requireAdmin, (req: Request, res: Response): void =
   }
 });
 
-// 18. GET /api/admin/files - List all case files and downloads log
+// 18. Files Catalog
 router.get('/files', requireAdmin, (req: Request, res: Response): void => {
   try {
     const cases = db.getAllCases();
@@ -1272,7 +1277,7 @@ router.get('/files', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 19. GET /api/admin/notifications - List all system notifications
+// 19. Notifications
 router.get('/notifications', requireAdmin, (req: Request, res: Response): void => {
   try {
     const raw = db.getRawData();
@@ -1282,7 +1287,7 @@ router.get('/notifications', requireAdmin, (req: Request, res: Response): void =
   }
 });
 
-// 20. POST /api/admin/notifications/broadcast - Dispatch System Announcement
+// 20. Broadcast Notification
 router.post('/notifications/broadcast', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
@@ -1325,17 +1330,16 @@ router.post('/notifications/broadcast', requireAdmin, (req: Request, res: Respon
   }
 });
 
-// 21. GET /api/admin/reports - Compiled Operational & Financial Analytics
+// 21. GET /api/admin/reports - Operational & Financial Analytics
 router.get('/reports', requireAdmin, (req: Request, res: Response): void => {
   try {
     const cases = db.getAllCases();
     const payments = db.getAllPayments();
-    const users = db.getAllUsers();
     const services = db.getAllServices();
 
-    const totalRevenue = payments.reduce((acc, p) => p.status === 'SUCCESS' ? acc + p.amount : acc, 0);
+    const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
     const totalTaxCollected = payments
-      .filter(p => p.status === 'SUCCESS')
+      .filter(p => p.status === 'PAID' || p.status === 'SUCCESS')
       .reduce((acc, p) => acc + (p.amount * 0.18 / 1.18), 0);
 
     const serviceBreakdown = services.map(s => {
@@ -1377,7 +1381,7 @@ router.get('/reports', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 22. Tax Settings Management
+// 22. Tax Settings
 router.get('/tax-settings', requireAdmin, (req: Request, res: Response): void => {
   try {
     const taxSettings = db.getTaxSettings();
@@ -1427,7 +1431,7 @@ router.put('/tax-settings', requireAdmin, (req: Request, res: Response): void =>
   }
 });
 
-// 23. General Settings
+// 23. General Platform Settings
 router.get('/general-settings', requireAdmin, (req: Request, res: Response): void => {
   try {
     const raw = db.getRawData();

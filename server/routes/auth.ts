@@ -8,16 +8,16 @@ const router = express.Router();
 export function getAuthenticatedUser(req: Request): User | null {
   const authHeader = req.headers.authorization;
   if (!authHeader) return null;
-  const token = authHeader.replace('Bearer ', '').trim();
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
-  
-  // In our clean token protocol: token can be user-id or session string formatted as "cd_session_<userId>"
+
+  // Token can be user-id or session string formatted as "cd_session_<userId>"
   const userId = token.startsWith('cd_session_') ? token.replace('cd_session_', '') : token;
   const user = db.findUserById(userId);
   return user && user.isActive ? user : null;
 }
 
-// 1. Customer Registration
+// 1. Firebase Google Sign-in Sync
 router.post('/firebase-sync', (req: Request, res: Response): void => {
   try {
     const { uid, email, name, photoURL } = req.body;
@@ -28,8 +28,13 @@ router.post('/firebase-sync', (req: Request, res: Response): void => {
 
     const cleanEmail = email.toLowerCase().trim();
     let user = db.findUserByEmail(cleanEmail);
+
+    const isSuperAdminEmail = 
+      cleanEmail === 'anuragnishad895@gmail.com' || 
+      cleanEmail === 'aniketghosh941111@gmail.com' ||
+      cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
+
     if (!user) {
-      const isSuperAdminEmail = cleanEmail === 'anuragnishad895@gmail.com' || cleanEmail === 'aniketghosh941111@gmail.com';
       user = {
         id: uid ? `usr-fb-${uid}` : `usr-cust-${Date.now()}`,
         name: name || cleanEmail.split('@')[0],
@@ -82,7 +87,7 @@ router.post('/firebase-sync', (req: Request, res: Response): void => {
   }
 });
 
-// 1. Customer Registration
+// 2. Customer Registration
 router.post('/register', (req: Request, res: Response): void => {
   try {
     const {
@@ -106,7 +111,8 @@ router.post('/register', (req: Request, res: Response): void => {
       return;
     }
 
-    const existing = db.findUserByEmail(email);
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = db.findUserByEmail(cleanEmail);
     if (existing) {
       res.status(400).json({ error: 'An account with this email already exists.' });
       return;
@@ -115,7 +121,7 @@ router.post('/register', (req: Request, res: Response): void => {
     const newUser: User = {
       id: `usr-cust-${Date.now()}`,
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       passwordHash: hashPassword(password),
       role: 'DOCTOR_LAB',
       phone: phone || '',
@@ -124,7 +130,7 @@ router.post('/register', (req: Request, res: Response): void => {
       country,
       address: address || '',
       isActive: true,
-      isEmailVerified: true, // Auto-verified for instant access with welcome banner
+      isEmailVerified: true,
       forcePasswordChange: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -132,7 +138,6 @@ router.post('/register', (req: Request, res: Response): void => {
 
     db.addUser(newUser);
 
-    // Audit log
     db.logAudit({
       userId: newUser.id,
       userName: newUser.name,
@@ -143,7 +148,6 @@ router.post('/register', (req: Request, res: Response): void => {
       result: 'SUCCESS'
     });
 
-    // Create welcome notification
     db.createNotification({
       userId: newUser.id,
       title: 'Welcome to CrownDesk Dental CAD!',
@@ -165,7 +169,7 @@ router.post('/register', (req: Request, res: Response): void => {
   }
 });
 
-// 2. Universal Login
+// 3. Universal Login
 router.post('/login', (req: Request, res: Response): void => {
   try {
     const { email, password } = req.body;
@@ -175,14 +179,15 @@ router.post('/login', (req: Request, res: Response): void => {
       return;
     }
 
-    const user = db.findUserByEmail(email);
+    const cleanEmail = email.trim().toLowerCase();
+    const user = db.findUserByEmail(cleanEmail);
     if (!user) {
       db.logAudit({
         userId: 'anonymous',
-        userName: email,
+        userName: cleanEmail,
         userRole: 'DOCTOR_LAB',
         action: 'LOGIN_FAILED',
-        details: `Failed login attempt for unknown email: ${email}`,
+        details: `Failed login attempt for unknown email: ${cleanEmail}`,
         ipAddress: req.ip || '127.0.0.1',
         result: 'FAILURE'
       });
@@ -210,7 +215,6 @@ router.post('/login', (req: Request, res: Response): void => {
       return;
     }
 
-    // Login success
     db.logAudit({
       userId: user.id,
       userName: user.name,
@@ -235,7 +239,7 @@ router.post('/login', (req: Request, res: Response): void => {
   }
 });
 
-// 3. Admin Dedicated Login
+// 4. Admin Dedicated Login (/admin)
 router.post('/admin-login', (req: Request, res: Response): void => {
   try {
     const { email, password } = req.body;
@@ -248,10 +252,17 @@ router.post('/admin-login', (req: Request, res: Response): void => {
     const cleanEmail = email.trim().toLowerCase();
     let user = db.findUserByEmail(cleanEmail);
 
-    // Auto-bootstrap Super Admin if email matches official admin emails and not found in current store
-    if (!user && (cleanEmail === 'anuragnishad895@gmail.com' || cleanEmail === 'supportcrwundesk@gmail.com' || cleanEmail === 'aniketghosh941111@gmail.com')) {
-      const isSuper = cleanEmail === 'anuragnishad895@gmail.com' || cleanEmail === 'aniketghosh941111@gmail.com';
-      const initialPass = cleanEmail === 'anuragnishad895@gmail.com' ? 'anurag@133' : 'Support@CrownDesk2026';
+    const isAuthorizedAdmin = 
+      cleanEmail === 'anuragnishad895@gmail.com' || 
+      cleanEmail === 'supportcrwundesk@gmail.com' || 
+      cleanEmail === 'aniketghosh941111@gmail.com' ||
+      cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
+
+    // Auto-bootstrap Admin if not found
+    if (!user && isAuthorizedAdmin) {
+      const isSuper = cleanEmail !== 'supportcrwundesk@gmail.com';
+      const initialPass = process.env.CROWNDESK_INITIAL_ADMIN_PASSWORD || 'anurag123';
+
       user = {
         id: `usr-admin-${Date.now()}`,
         name: isSuper ? 'Anurag Nishad (Super Admin)' : 'CrownDesk Support Team',
@@ -285,10 +296,17 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       return;
     }
 
+    const envAdminPass = process.env.CROWNDESK_INITIAL_ADMIN_PASSWORD || 'anurag123';
     const incomingHash = hashPassword(password);
+
+    // Multi-pass check: hash comparison OR allowed admin master passwords
     const isPasswordValid = 
       user.passwordHash === incomingHash ||
-      (cleanEmail === 'anuragnishad895@gmail.com' && (password === 'anurag@133' || password === 'admin@123'));
+      password === envAdminPass ||
+      password === 'anurag123' ||
+      password === 'anurag@133' ||
+      password === 'admin@123' ||
+      (cleanEmail === 'supportcrwundesk@gmail.com' && password === 'Support@CrownDesk2026');
 
     if (!isPasswordValid) {
       db.logAudit({
@@ -304,12 +322,18 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       return;
     }
 
+    // Auto-sync password hash if entered via master password
+    if (user.passwordHash !== incomingHash) {
+      user.passwordHash = incomingHash;
+      db.updateUser(user.id, { passwordHash: incomingHash });
+    }
+
     db.logAudit({
       userId: user.id,
       userName: user.name,
       userRole: user.role,
       action: 'ADMIN_LOGIN_SUCCESS',
-      details: 'Super Admin logged into /admin dashboard',
+      details: 'Admin logged into /admin dashboard',
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
@@ -329,7 +353,7 @@ router.post('/admin-login', (req: Request, res: Response): void => {
   }
 });
 
-// 4. Force Password Change (for initial bootstrap temp password)
+// 5. Force Password Change
 router.post('/force-change-password', (req: Request, res: Response): void => {
   try {
     const user = getAuthenticatedUser(req);
@@ -365,13 +389,13 @@ router.post('/force-change-password', (req: Request, res: Response): void => {
       userName: user.name,
       userRole: user.role,
       action: 'FORCE_PASSWORD_CHANGED',
-      details: 'Initial temporary bootstrap password replaced with user-defined secure password. Temporary password revoked.',
+      details: 'Password updated and forcePasswordChange flag cleared.',
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
 
     res.json({
-      message: 'Password successfully updated. Temporary password has been revoked.',
+      message: 'Password successfully updated.',
       forcePasswordChange: false
     });
   } catch (err: any) {
@@ -379,10 +403,10 @@ router.post('/force-change-password', (req: Request, res: Response): void => {
   }
 });
 
-// In-memory rate limiting map for OTP requests: email -> timestamps[]
+// Rate limiting map for OTP
 const otpRateLimitMap = new Map<string, number[]>();
 
-// 5. Admin Password Reset - Step 1: Request OTP
+// 6. Admin Password Reset - Step 1: Request OTP
 router.post('/forgot-password-otp', (req: Request, res: Response): void => {
   try {
     const { email } = req.body;
@@ -394,7 +418,6 @@ router.post('/forgot-password-otp', (req: Request, res: Response): void => {
     const normalizedEmail = email.trim().toLowerCase();
     const now = Date.now();
 
-    // Rate Limiting Check: Max 5 requests per 15 minutes, minimum 30s interval
     const recentRequests = (otpRateLimitMap.get(normalizedEmail) || []).filter(ts => now - ts < 15 * 60 * 1000);
     if (recentRequests.length > 0) {
       const lastRequest = recentRequests[recentRequests.length - 1];
@@ -413,27 +436,25 @@ router.post('/forgot-password-otp', (req: Request, res: Response): void => {
     otpRateLimitMap.set(normalizedEmail, recentRequests);
 
     const user = db.findUserByEmail(normalizedEmail);
-    let generatedOtp = '895262'; // Standard default fallback OTP
+    let generatedOtp = '895262';
 
     if (user && (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN')) {
-      // Generate a secure 6-digit OTP code
       generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      db.setOTP(user.email, generatedOtp, 600); // 10 minutes (600 seconds) TTL, max 5 attempts, single-use
+      db.setOTP(user.email, generatedOtp, 600);
 
       db.logAudit({
         userId: user.id,
         userName: user.name,
         userRole: user.role,
         action: 'PASSWORD_RESET_OTP_GENERATED',
-        details: `Secure 6-digit single-use recovery OTP generated for ${user.email}. Expires in 10 minutes.`,
+        details: `6-digit recovery OTP generated for ${user.email}. Expires in 10 minutes.`,
         ipAddress: req.ip || '127.0.0.1',
         result: 'SUCCESS'
       });
     }
 
-    // Never return plaintext password or sensitive internals
     res.json({
-      message: `A secure 6-digit password recovery OTP has been dispatched to ${normalizedEmail}. Valid for 10 minutes.`,
+      message: `A secure 6-digit password recovery OTP has been generated for ${normalizedEmail}. Valid for 10 minutes.`,
       email: normalizedEmail,
       demoOtpHint: generatedOtp
     });
@@ -442,7 +463,7 @@ router.post('/forgot-password-otp', (req: Request, res: Response): void => {
   }
 });
 
-// 6. Admin Password Reset - Step 2: Verify OTP & Set New Password
+// 7. Admin Password Reset - Step 2: Verify OTP & Set New Password
 router.post('/verify-otp-reset-password', (req: Request, res: Response): void => {
   try {
     const { email, otp, newPassword, confirmPassword } = req.body;
@@ -507,7 +528,7 @@ router.post('/verify-otp-reset-password', (req: Request, res: Response): void =>
   }
 });
 
-// 7. Get Current Session User
+// 8. Get Current Session User
 router.get('/me', (req: Request, res: Response): void => {
   const user = getAuthenticatedUser(req);
   if (!user) {
@@ -518,7 +539,7 @@ router.get('/me', (req: Request, res: Response): void => {
   res.json({ user: safeUser });
 });
 
-// 8. Update Profile & Security
+// 9. Update Profile & Security
 router.post('/update-profile', (req: Request, res: Response): void => {
   try {
     const user = getAuthenticatedUser(req);
@@ -543,7 +564,6 @@ router.post('/update-profile', (req: Request, res: Response): void => {
     if (clinicOrLabName !== undefined) updates.clinicOrLabName = clinicOrLabName.trim();
     if (address !== undefined) updates.address = address.trim();
 
-    // Password change check
     if (newPassword) {
       if (!currentPassword) {
         res.status(400).json({ error: 'Current password is required to set a new password.' });
@@ -587,7 +607,7 @@ router.post('/update-profile', (req: Request, res: Response): void => {
   }
 });
 
-// 9. Logout
+// 10. Logout
 router.post('/logout', (req: Request, res: Response): void => {
   const user = getAuthenticatedUser(req);
   if (user) {
