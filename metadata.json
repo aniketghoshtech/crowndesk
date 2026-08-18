@@ -1,0 +1,6 @@
+{
+  "name": "CrownDesk",
+  "description": "Production-grade Dental CAD Case Management SaaS platform for Dental Labs, Doctors, Designers, and Administrators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

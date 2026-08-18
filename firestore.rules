@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'anuragnishad895@gmail.com' ||
+        request.auth.token.email == 'aniketghosh941111@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'SUPER_ADMIN'])
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Dental Cases Collection
+    match /cases/{caseDocId} {
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.assignedDesignerId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.customerId == request.auth.uid ||
+        resource.data.assignedDesignerId == request.auth.uid
+      );
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.customerId == request.auth.uid && request.resource.data.customerId == request.auth.uid) ||
+        (resource.data.assignedDesignerId == request.auth.uid && request.resource.data.customerId == resource.data.customerId)
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Payment Records (Restricted: Admins and Customer only, never designers/employees)
+    match /payments/{paymentDocId} {
+      allow get: if isSignedIn() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.customerId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Invoices Collection (Restricted: Admins and Customer only, never designers/employees)
+    match /invoices/{invoiceDocId} {
+      allow get: if isSignedIn() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Platform Financial Settings & Analytics
+    match /platform_settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Audit Logs
+    match /audit_logs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable audit logs
+    }
+
+    // AI Chat History
+    match /ai_chats/{chatId} {
+      allow get, list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (isAdmin() || (resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid));
+      allow delete: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+    }
+  }
+}

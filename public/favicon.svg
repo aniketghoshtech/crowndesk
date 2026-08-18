@@ -1,0 +1,142 @@
+<svg viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="crownMetallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="25%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#1e40af" />
+      <stop offset="75%" stop-color="#0369a1" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+    <linearGradient id="crownHighlight" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#e0f2fe" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#0c4a6e" stop-opacity="0.1" />
+    </linearGradient>
+    <radialGradient id="toothRadial" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="45%" stop-color="#f8fafc" />
+      <stop offset="75%" stop-color="#e2e8f0" />
+      <stop offset="100%" stop-color="#93c5fd" />
+    </radialGradient>
+    <linearGradient id="orbitSwoosh" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.95" />
+      <stop offset="40%" stop-color="#00d2ff" stop-opacity="1" />
+      <stop offset="80%" stop-color="#38bdf8" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#67e8f9" stop-opacity="0.8" />
+    </linearGradient>
+    <radialGradient id="jewelGlow" cx="35%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="40%" stop-color="#67e8f9" />
+      <stop offset="80%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </radialGradient>
+  </defs>
+
+  <!-- Dark Base for Crisp Contrast -->
+  <rect width="300" height="300" rx="60" fill="#020617"/>
+
+  <!-- Soft Ambient Ground Glow -->
+  <ellipse cx="150" cy="270" rx="55" ry="10" fill="#00d2ff" fill-opacity="0.3" />
+
+  <!-- 3D Dental Molar Tooth -->
+  <g id="dental-tooth">
+    <path
+      d="M95 105
+         C95 72, 120 70, 150 78
+         C180 70, 205 72, 205 105
+         C205 138, 212 170, 195 210
+         C185 235, 175 258, 162 260
+         C153 262, 149 235, 150 205
+         C150 195, 148 195, 148 205
+         C149 235, 145 262, 136 260
+         C123 258, 113 235, 103 210
+         C86 170, 95 138, 95 105 Z"
+      fill="url(#toothRadial)"
+      stroke="#bae6fd"
+      stroke-width="2.5"
+    />
+    <path
+      d="M106 102
+         C106 82, 122 80, 140 85
+         C128 95, 116 115, 116 142
+         C108 128, 106 114, 106 102 Z"
+      fill="#ffffff"
+      fill-opacity="0.85"
+    />
+    <path
+      d="M188 100
+         C196 114, 194 135, 188 152
+         C187 140, 189 122, 182 108
+         C184 105, 186 102, 188 100 Z"
+      fill="#ffffff"
+      fill-opacity="0.5"
+    />
+  </g>
+
+  <!-- Royal Metallic Sapphire Crown -->
+  <g id="royal-crown">
+    <path
+      d="M98 88
+         C112 94, 150 97, 188 94
+         C198 92, 202 88, 202 88
+         L208 55
+         L182 68
+         L150 26
+         L118 68
+         L92 55
+         Z"
+      fill="url(#crownMetallic)"
+      stroke="#7dd3fc"
+      stroke-width="1.5"
+    />
+    <path
+      d="M150 29
+         L179 66
+         L150 88
+         L121 66
+         Z"
+      fill="url(#crownHighlight)"
+    />
+    <!-- Crown Jewels -->
+    <circle cx="92" cy="54" r="5" fill="url(#jewelGlow)" stroke="#ffffff" stroke-width="1" />
+    <circle cx="118" cy="68" r="4.5" fill="url(#jewelGlow)" stroke="#ffffff" stroke-width="0.8" />
+    <circle cx="150" cy="24" r="7" fill="url(#jewelGlow)" stroke="#ffffff" stroke-width="1.5" />
+    <circle cx="182" cy="68" r="4.5" fill="url(#jewelGlow)" stroke="#ffffff" stroke-width="0.8" />
+    <circle cx="208" cy="54" r="5" fill="url(#jewelGlow)" stroke="#ffffff" stroke-width="1" />
+  </g>
+
+  <!-- Dynamic Electric Orbit Swoosh Ring -->
+  <g id="orbital-swoosh">
+    <path
+      d="M82 172
+         C68 152, 75 130, 102 118
+         C138 102, 192 112, 228 142
+         C246 156, 252 170, 238 180
+         C224 190, 190 182, 150 168
+         C115 156, 90 162, 82 172 Z"
+      fill="url(#orbitSwoosh)"
+    />
+    <path
+      d="M88 165
+         C112 145, 160 138, 218 158
+         C235 164, 240 172, 232 176"
+      stroke="#ffffff"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-opacity="0.9"
+    />
+  </g>
+
+  <!-- Digital CAD Pixels -->
+  <g id="cad-pixels" fill="#00d2ff">
+    <rect x="238" y="112" width="9" height="9" rx="1.5" fill="#00e5ff" />
+    <rect x="251" y="102" width="8" height="8" rx="1.5" fill="#38bdf8" />
+    <rect x="263" y="94" width="7" height="7" rx="1" fill="#7dd3fc" />
+    <rect x="274" y="86" width="6" height="6" rx="1" fill="#bae6fd" />
+    <rect x="246" y="125" width="8.5" height="8.5" rx="1.5" fill="#00d2ff" />
+    <rect x="258" y="115" width="7.5" height="7.5" rx="1" fill="#38bdf8" />
+    <rect x="269" y="106" width="6.5" height="6.5" rx="1" fill="#7dd3fc" />
+    <rect x="254" y="137" width="8" height="8" rx="1.5" fill="#0284c7" />
+    <rect x="266" y="128" width="7" height="7" rx="1" fill="#00d2ff" />
+  </g>
+</svg>

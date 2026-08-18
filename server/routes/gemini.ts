@@ -1,0 +1,216 @@
+import { Router, Request, Response } from 'express';
+import { GoogleGenAI } from '@google/genai';
+
+const geminiRouter = Router();
+
+let aiClient: GoogleGenAI | null = null;
+
+function getGeminiClient(): GoogleGenAI | null {
+  if (!process.env.GEMINI_API_KEY) {
+    return null;
+  }
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
+  }
+  return aiClient;
+}
+
+// System prompts for role-based dental assistants
+const ASSISTANT_ROLES: Record<string, string> = {
+  cad_specialist: `You are "crowndesk bot", CrownDesk's Senior Dental CAD Prosthetics & Restoration Specialist.
+Identity Directive: You MUST always identify yourself as "crowndesk bot".
+You provide expert advice on Exocad, 3Shape, and Dental Wings design workflows, margin line placement, occlusal clearance, minimal thickness requirements (e.g., Monolithic Zirconia 0.6mm-0.8mm, E.max 1.0mm-1.2mm, PMMA 1.0mm), connector dimensions for 3-unit bridges (minimum 9mm² anterior, 12mm² posterior), screw-retained vs cement-retained implant crowns, and emergence profile shaping.
+Format your responses with clean Markdown, clear bullet points, and actionable clinical advice.`,
+
+  clinical_analyst: `You are "crowndesk bot", CrownDesk's Clinical Prosthodontics & Scan Quality Analyst.
+Identity Directive: You MUST always identify yourself as "crowndesk bot".
+You review STL/PLY/OBJ scan quality, evaluate preparation taper, margin clarity, undercut detection, bite registration alignment, and soft tissue capture.
+Give concise, evidence-based recommendations on whether scans are adequate for fabrication or if chairside re-scan/margin refinement is necessary.`,
+
+  instant_assistant: `You are "crowndesk bot", CrownDesk's Instant Lab Support Assistant.
+Identity Directive: You MUST always identify yourself as "crowndesk bot".
+You provide fast, friendly, high-accuracy answers regarding case turnaround times, pricing tiers, design revisions, material properties, shade selection guidelines (VITA Classical & 3D Master), and workflow tracking.
+Keep responses snappy, polite, and well-structured with bullet points.`,
+
+  research_analyst: `You are "crowndesk bot", CrownDesk's Dental Lab Industry & Technology Researcher.
+Identity Directive: You MUST always identify yourself as "crowndesk bot".
+You utilize real-time Google Search data to deliver up-to-date information on the latest FDA-cleared dental materials, 3D printing resins, high-speed milling tools, lab certifications, and global pricing benchmarks.`
+};
+
+/**
+ * POST /api/gemini/chat
+ * Multi-turn Gemini chat endpoint with model selection, system roles, and Google Search Grounding.
+ */
+geminiRouter.post('/chat', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const {
+      messages = [],
+      model = 'gemini-3.5-flash',
+      role = 'cad_specialist',
+      enableSearch = false,
+      caseContext = null,
+      customSystemPrompt = ''
+    } = req.body;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({ error: 'Messages array is required.' });
+      return;
+    }
+
+    // Supported models based on task complexity
+    const validModels = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.7-flash'];
+    const selectedModel = validModels.includes(model) ? model : 'gemini-3.5-flash';
+
+    // Construct system instruction
+    const baseRoleInstruction = ASSISTANT_ROLES[role] || ASSISTANT_ROLES.cad_specialist;
+    let systemInstruction = `[IDENTITY & TECHNICAL PERSONA DIRECTIVE]
+You are "crowndesk bot", the dedicated and authoritative Dental CAD Intelligence Assistant for the CrownDesk digital dental laboratory platform.
+
+STRICT IDENTITY RULES:
+1. Self-Identification: Always identify yourself strictly as "crowndesk bot". Never say you are "Google Gemini", "Gemini", "ChatGPT", or a generic language model. If asked who or what you are, state that you are "crowndesk bot", the dedicated CrownDesk Dental CAD Technical Assistant.
+2. Technical Persona: Maintain a rigorous, professional, and precise dental CAD and prosthodontic expert persona at all times. Use accurate clinical, lab, and CAD/CAM terminology (e.g. preparation taper, finish line geometry, emergence profile, occlusal clearance, minimal wall thickness, STL/PLY mesh integrity, milling burs, sintering curves).
+3. Practical Guidance: Provide actionable, step-by-step guidance tailored for dental CAD technicians (Exocad, 3Shape, Dental Wings), prosthodontists, dental lab managers, and clinicians.
+4. Tone & Style: Clear, authoritative, courteous, and clinical. Use clean Markdown formatting with clear bullet points.
+
+${baseRoleInstruction}`;
+
+    if (caseContext) {
+      systemInstruction += `\n\nActive Case Context:
+- Case ID: ${caseContext.caseId || 'N/A'}
+- Restoration: ${caseContext.restorationType || 'N/A'}
+- Tooth Numbers: ${caseContext.toothNumbers || 'N/A'}
+- Material: ${caseContext.material || 'N/A'}
+- Shade: ${caseContext.shade || 'N/A'}
+- Clinical Notes: ${caseContext.notes || 'None'}`;
+    }
+
+    if (customSystemPrompt) {
+      systemInstruction += `\n\nCustom System Directives:\n${customSystemPrompt}`;
+    }
+
+    const ai = getGeminiClient();
+
+    // If Gemini client is not initialized due to missing API key, provide an intelligent dental fallback
+    if (!ai) {
+      const lastUserMsg = messages[messages.length - 1]?.text || 'Hello';
+      const fallbackResponse = `### crowndesk bot (Standard Mode)
+
+Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental CAD Design'}**.
+
+**Key CAD & Clinical Recommendations:**
+- **Material Selection**: Ensure minimum wall thickness (${caseContext?.material === 'ZIRCONIA' ? '0.6mm - 0.8mm for Monolithic Zirconia' : '1.0mm - 1.2mm for Lithium Disilicate/E.max'}).
+- **Margin Line Precision**: Ensure 360-degree continuous chamfer or rounded shoulder margin without undercut artifacts.
+- **Occlusal Clearance**: Check dynamic excursive movements and adjust clearance to 0.05mm - 0.10mm relief.
+- **Turnaround & Triage**: High-priority design available within 2-4 hours. Standard turnaround is 12-24 hours.
+
+*I am crowndesk bot, your dedicated dental CAD technical assistant. To enable real-time reasoning and live Google Search grounding, attach your Gemini API key in the platform settings.*`;
+
+      res.json({
+        text: fallbackResponse,
+        model: selectedModel,
+        groundingMetadata: null,
+        mode: 'fallback'
+      });
+      return;
+    }
+
+    // Format messages for @google/genai
+    // Map to contents array
+    const contents = messages.map((m: any) => ({
+      role: m.role === 'model' || m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: typeof m.text === 'string' ? m.text : JSON.stringify(m.text) }]
+    }));
+
+    // Configure tools: add googleSearch if requested (Search Grounding)
+    const config: any = {
+      systemInstruction
+    };
+
+    if (enableSearch) {
+      config.tools = [{ googleSearch: {} }];
+    }
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents,
+      config
+    });
+
+    const responseText = response.text || 'I processed your dental CAD query, but no text was returned.';
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata || null;
+
+    res.json({
+      text: responseText,
+      model: selectedModel,
+      groundingMetadata,
+      usage: response.usageMetadata || null,
+      mode: 'live'
+    });
+  } catch (error: any) {
+    console.error('Gemini API Error:', error);
+    res.status(500).json({
+      error: error.message || 'Failed to generate response from Gemini AI',
+      fallbackText: 'Unable to communicate with the Gemini AI service. Please verify your connection or try again in a few moments.'
+    });
+  }
+});
+
+/**
+ * POST /api/gemini/search-grounded-info
+ * Direct Search Grounding tool using gemini-3.5-flash with googleSearch tool.
+ */
+geminiRouter.post('/search-grounded-info', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { query, topic = 'dental CAD technology and materials' } = req.body;
+    if (!query) {
+      res.status(400).json({ error: 'Search query is required.' });
+      return;
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      res.json({
+        text: `### Verified Search Grounding (Offline Mode)
+Query: **${query}**
+Current Dental Standard: High-translucency multilayer zirconia (5Y-PSZ anterior, 3Y-TZP posterior) remains the gold standard for full-contour monolithic CAD/CAM restorations in 2026.`,
+        sources: [],
+        searchQueries: [query]
+      });
+      return;
+    }
+
+    const prompt = `Perform an accurate, real-time research query regarding: "${query}".
+Topic area: ${topic}.
+Provide a concise, up-to-date summary with concrete facts, material specs, FDA/regulatory approvals, or industry pricing benchmarks as of 2026.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+      config: {
+        systemInstruction: 'You are a Dental Laboratory and Prosthodontic Clinical Research Specialist. Use Google Search data to ensure the most accurate, current facts.',
+        tools: [{ googleSearch: {} }]
+      }
+    });
+
+    const text = response.text || '';
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata || null;
+
+    res.json({
+      text,
+      groundingMetadata,
+      model: 'gemini-3.5-flash'
+    });
+  } catch (error: any) {
+    console.error('Gemini Search Grounding Error:', error);
+    res.status(500).json({ error: error.message || 'Failed to perform search grounding.' });
+  }
+});
+
+export default geminiRouter;
