@@ -796,7 +796,7 @@ router.post('/payment-settings/test-connection', requireAdmin, (req: Request, re
 
     if (!u || !u.upiId || !u.upiId.includes('@')) {
       status = 'UNCONFIGURED';
-      message = 'Valid Merchant UPI ID (e.g. 9058322251@paytm, merchant@upi) is required.';
+      message = 'Valid Merchant UPI ID (e.g. 9058322251@kotakbank, merchant@upi) is required.';
     } else {
       status = 'CONNECTED';
       message = `UPI payment handle "${u.upiId}" verified. Dynamic UPI intent string and QR generator ready.`;
