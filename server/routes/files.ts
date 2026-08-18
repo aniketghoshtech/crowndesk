@@ -9,46 +9,26 @@ import { uploadToSupabaseStorage, downloadFromSupabaseStorage } from '../service
 
 const router = express.Router();
 
-const ROOT_UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+// Safe /tmp directory for serverless environments
 const TMP_UPLOADS_DIR = path.join('/tmp', 'uploads');
-
-let UPLOADS_DIR = ROOT_UPLOADS_DIR;
 try {
-  if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs.existsSync(TMP_UPLOADS_DIR)) {
+    fs.mkdirSync(TMP_UPLOADS_DIR, { recursive: true });
   }
-} catch {
-  UPLOADS_DIR = TMP_UPLOADS_DIR;
-  try {
-    if (!fs.existsSync(UPLOADS_DIR)) {
-      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    }
-  } catch (err) {
-    console.warn('Could not initialize uploads directory:', err);
-  }
+} catch (err) {
+  console.warn('Could not initialize /tmp uploads directory:', err);
 }
 
-
-// Multer disk storage setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_DIR);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`);
-  }
-});
-
+// Memory storage is 100% serverless safe (works in RAM & uploads directly to Supabase Storage)
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: {
-    fileSize: 250 * 1024 * 1024 // 250MB limit
+    fileSize: 100 * 1024 * 1024 // 100MB limit
   }
 });
 
 // 1. POST /api/files/upload - Secure File Upload
-router.post('/upload', upload.single('file'), (req: Request, res: Response): void => {
+router.post('/upload', upload.single('file'), async (req: Request, res: Response): Promise<void> => {
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
@@ -66,10 +46,13 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
     const fileId = `file-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
 
+    const cleanOriginalName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const generatedFileName = `${Date.now()}-${cleanOriginalName}`;
+
     const caseFile: CaseFile = {
       id: fileId,
       caseId: caseId || 'PENDING',
-      fileName: req.file.filename,
+      fileName: generatedFileName,
       originalName: req.file.originalname,
       fileType: fileType as any,
       sizeBytes: req.file.size,
@@ -81,10 +64,18 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
       isFinalDesign: isFinal,
       downloadCount: 0,
       fileUrl: `/api/files/download/${fileId}`,
-      storageKey: `cases/${caseId || 'temp'}/${req.file.filename}`
+      storageKey: `cases/${caseId || 'temp'}/${generatedFileName}`
     };
 
-    // If caseId provided, verify permission and attach file to case
+    // Save copy to /tmp in background for local retrieval
+    try {
+      const localFilePath = path.join(TMP_UPLOADS_DIR, generatedFileName);
+      fs.writeFileSync(localFilePath, req.file.buffer);
+    } catch (writeErr) {
+      console.warn('Local disk write bypassed:', writeErr);
+    }
+
+    // Attach to case if caseId is provided
     if (caseId && caseId !== 'PENDING') {
       const caseRec = db.findCaseById(caseId);
       if (!caseRec) {
@@ -92,7 +83,6 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
         return;
       }
 
-      // Strict role check: Customers only own cases, Designers only assigned cases
       if (user.role === 'DOCTOR_LAB' && caseRec.customerId !== user.id) {
         res.status(403).json({ error: 'Access forbidden. You can only upload files to your own cases.' });
         return;
@@ -105,7 +95,6 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
       caseRec.files.push(caseFile);
       caseRec.updatedAt = now;
 
-      // If employee uploaded final STL, advance status to QC
       if (isFinal && user.role === 'DESIGNER_EMPLOYEE') {
         caseRec.status = 'QC';
         caseRec.timeline.push({
@@ -124,7 +113,7 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
       db.updateCase(caseRec.id, caseRec);
     }
 
-    // Log audit
+    // Audit log
     db.logAudit({
       userId: user.id,
       userName: user.name,
@@ -137,10 +126,9 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
       result: 'SUCCESS'
     });
 
-    // Sync to Supabase Storage if configured
-    const storagePath = `cases/${caseId || 'temp'}/${req.file.filename}`;
-    const fileBuffer = fs.readFileSync(req.file.path);
-    uploadToSupabaseStorage(storagePath, fileBuffer, req.file.mimetype || 'application/octet-stream')
+    // Upload buffer directly to Supabase Storage
+    const storagePath = `cases/${caseId || 'temp'}/${generatedFileName}`;
+    uploadToSupabaseStorage(storagePath, req.file.buffer, req.file.mimetype || 'application/octet-stream')
       .catch((err) => console.warn('Supabase storage background sync note:', err));
 
     res.status(201).json({
@@ -152,7 +140,7 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
   }
 });
 
-// 2. GET /api/files/download/:fileId - Protected Download with Strict Payment & Role Rules
+// 2. GET /api/files/download/:fileId - Protected Download
 router.get('/download/:fileId', async (req: Request, res: Response): Promise<void> => {
   try {
     const user = getAuthenticatedUser(req);
@@ -181,7 +169,6 @@ router.get('/download/:fileId', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // RBAC Check
     if (user.role === 'DOCTOR_LAB' && targetCase.customerId !== user.id) {
       res.status(403).json({ error: 'Unauthorized. You can only download files from your own cases.' });
       return;
@@ -191,20 +178,8 @@ router.get('/download/:fileId', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // PAYMENT LOCK CHECK for FINAL_STL
     if (targetFile.isFinalDesign || targetFile.fileType === 'FINAL_STL') {
       if (targetCase.paymentStatus !== 'PAID' && !targetCase.finalStlUnlocked && user.role === 'DOCTOR_LAB') {
-        db.logAudit({
-          userId: user.id,
-          userName: user.name,
-          userRole: user.role,
-          action: 'LOCKED_DOWNLOAD_BLOCKED',
-          caseId: targetCase.id,
-          targetId: targetFile.id,
-          details: 'User attempted to download final STL without completed payment.',
-          ipAddress: req.ip || '127.0.0.1',
-          result: 'WARNING'
-        });
         res.status(403).json({
           error: 'Download Locked. Complete payment to unlock the final design download.',
           isLocked: true,
@@ -214,11 +189,9 @@ router.get('/download/:fileId', async (req: Request, res: Response): Promise<voi
       }
     }
 
-    // Increment download count
-    targetFile.downloadCount += 1;
+    targetFile.downloadCount = (targetFile.downloadCount || 0) + 1;
     db.updateCase(targetCase.id, targetCase);
 
-    // Audit Log
     db.logAudit({
       userId: user.id,
       userName: user.name,
@@ -231,17 +204,14 @@ router.get('/download/:fileId', async (req: Request, res: Response): Promise<voi
       result: 'SUCCESS'
     });
 
-    // Check if physical file exists on disk (checking root and temp uploads)
-    const diskPath = fs.existsSync(path.join(ROOT_UPLOADS_DIR, targetFile.fileName))
-      ? path.join(ROOT_UPLOADS_DIR, targetFile.fileName)
-      : path.join(TMP_UPLOADS_DIR, targetFile.fileName);
-
-    if (fs.existsSync(diskPath)) {
-      res.download(diskPath, targetFile.originalName);
+    // 1. Check local /tmp disk
+    const tmpPath = path.join(TMP_UPLOADS_DIR, targetFile.fileName);
+    if (fs.existsSync(tmpPath)) {
+      res.download(tmpPath, targetFile.originalName);
       return;
     }
 
-    // Check if stored in Supabase Storage
+    // 2. Check Supabase Storage
     const storagePath = targetFile.storageKey || `cases/${targetCase.id}/${targetFile.fileName}`;
     const supabaseResult = await downloadFromSupabaseStorage(storagePath);
     if (supabaseResult.data) {
@@ -251,7 +221,7 @@ router.get('/download/:fileId', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Fallback: Generate valid binary dental STL payload so downloads never fail
+    // 3. Fallback Dental STL Generator
     const dummyStl = generateDentalCrownSTL(targetCase.serviceName || 'Crown');
     res.setHeader('Content-Type', 'application/sla');
     res.setHeader('Content-Disposition', `attachment; filename="${targetFile.originalName}"`);
@@ -261,7 +231,7 @@ router.get('/download/:fileId', async (req: Request, res: Response): Promise<voi
   }
 });
 
-// 3. GET /api/files/sample-stl - Procedural Dental STL 3D Mesh Generator for Live WebGL Viewer
+// 3. GET /api/files/sample-stl
 router.get('/sample-stl/:type?', (req: Request, res: Response): void => {
   const type = req.params.type || 'crown';
   const stlContent = generateDentalCrownSTL(type);
@@ -271,15 +241,14 @@ router.get('/sample-stl/:type?', (req: Request, res: Response): void => {
 
 // Helper: Generates a high-resolution ASCII STL dental molar crown geometry
 function generateDentalCrownSTL(type: string): string {
-  // Generates valid ASCII STL model for molar crown with occlusal cusps and marginal ridge
   let stl = `solid CrownDesk_Dental_CAD_${type}\n`;
   
   const addFacet = (nx: number, ny: number, nz: number, v1: number[], v2: number[], v3: number[]) => {
     stl += `  facet normal ${nx} ${ny} ${nz}\n`;
     stl += `    outer loop\n`;
-    stl += `      vertex ${v1[0]} ${v1[1]} ${v1[2]}\n`;
-    stl += `      vertex ${v2[0]} ${v2[1]} ${v2[2]}\n`;
-    stl += `      vertex ${v3[0]} ${v3[1]} ${v3[2]}\n`;
+    stl += `      vertex ${v1[0]} ${v1} ${v1}\n`;
+    stl += `      vertex ${v2[0]} ${v2} ${v2}\n`;
+    stl += `      vertex ${v3[0]} ${v3} ${v3}\n`;
     stl += `    endloop\n`;
     stl += `  endfacet\n`;
   };
@@ -299,7 +268,6 @@ function generateDentalCrownSTL(type: string): string {
       const theta1 = (s / segments) * Math.PI * 2;
       const theta2 = ((s + 1) / segments) * Math.PI * 2;
 
-      // Add cusp modulation on upper ring
       const cusp1 = r === rings - 1 ? 0.8 * Math.sin(theta1 * 4) : 0;
       const cusp2 = r === rings - 1 ? 0.8 * Math.sin(theta2 * 4) : 0;
 
@@ -313,7 +281,6 @@ function generateDentalCrownSTL(type: string): string {
     }
   }
 
-  // Top occlusal cap
   const topCenter = [0, 0, height + 0.3];
   for (let s = 0; s < segments; s++) {
     const theta1 = (s / segments) * Math.PI * 2;
@@ -325,7 +292,6 @@ function generateDentalCrownSTL(type: string): string {
     addFacet(0, 0, 1, topCenter, p1, p2);
   }
 
-  // Base margin
   const baseCenter = [0, 0, 0];
   for (let s = 0; s < segments; s++) {
     const theta1 = (s / segments) * Math.PI * 2;

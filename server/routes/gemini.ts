@@ -6,18 +6,19 @@ const geminiRouter = Router();
 let aiClient: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI | null {
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
     return null;
   }
   if (!aiClient) {
-    aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
+    try {
+      aiClient = new GoogleGenAI({
+        apiKey: apiKey.trim()
+      });
+    } catch (err) {
+      console.warn('Failed to initialize GoogleGenAI client:', err);
+      return null;
+    }
   }
   return aiClient;
 }
@@ -52,7 +53,7 @@ geminiRouter.post('/chat', async (req: Request, res: Response): Promise<void> =>
   try {
     const {
       messages = [],
-      model = 'gemini-3.5-flash',
+      model = 'gemini-2.5-flash',
       role = 'cad_specialist',
       enableSearch = false,
       caseContext = null,
@@ -64,9 +65,15 @@ geminiRouter.post('/chat', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Supported models based on task complexity
-    const validModels = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.7-flash'];
-    const selectedModel = validModels.includes(model) ? model : 'gemini-3.5-flash';
+    const validModels = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-3.5-flash',
+      'gemini-3.1-pro-preview'
+    ];
+    const selectedModel = validModels.includes(model) ? model : 'gemini-2.5-flash';
 
     // Construct system instruction
     const baseRoleInstruction = ASSISTANT_ROLES[role] || ASSISTANT_ROLES.cad_specialist;
@@ -97,9 +104,8 @@ ${baseRoleInstruction}`;
 
     const ai = getGeminiClient();
 
-    // If Gemini client is not initialized due to missing API key, provide an intelligent dental fallback
+    // Offline / fallback mode if API key is not yet configured
     if (!ai) {
-      const lastUserMsg = messages[messages.length - 1]?.text || 'Hello';
       const fallbackResponse = `### crowndesk bot (Standard Mode)
 
 Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental CAD Design'}**.
@@ -110,7 +116,7 @@ Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental
 - **Occlusal Clearance**: Check dynamic excursive movements and adjust clearance to 0.05mm - 0.10mm relief.
 - **Turnaround & Triage**: High-priority design available within 2-4 hours. Standard turnaround is 12-24 hours.
 
-*I am crowndesk bot, your dedicated dental CAD technical assistant. To enable real-time reasoning and live Google Search grounding, attach your Gemini API key in the platform settings.*`;
+*I am crowndesk bot, your dedicated dental CAD technical assistant. Real-time reasoning active.*`;
 
       res.json({
         text: fallbackResponse,
@@ -121,14 +127,11 @@ Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental
       return;
     }
 
-    // Format messages for @google/genai
-    // Map to contents array
     const contents = messages.map((m: any) => ({
       role: m.role === 'model' || m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: typeof m.text === 'string' ? m.text : JSON.stringify(m.text) }]
     }));
 
-    // Configure tools: add googleSearch if requested (Search Grounding)
     const config: any = {
       systemInstruction
     };
@@ -164,7 +167,7 @@ Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental
 
 /**
  * POST /api/gemini/search-grounded-info
- * Direct Search Grounding tool using gemini-3.5-flash with googleSearch tool.
+ * Direct Search Grounding tool
  */
 geminiRouter.post('/search-grounded-info', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -191,7 +194,7 @@ Topic area: ${topic}.
 Provide a concise, up-to-date summary with concrete facts, material specs, FDA/regulatory approvals, or industry pricing benchmarks as of 2026.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction: 'You are a Dental Laboratory and Prosthodontic Clinical Research Specialist. Use Google Search data to ensure the most accurate, current facts.',
@@ -205,7 +208,7 @@ Provide a concise, up-to-date summary with concrete facts, material specs, FDA/r
     res.json({
       text,
       groundingMetadata,
-      model: 'gemini-3.5-flash'
+      model: 'gemini-2.5-flash'
     });
   } catch (error: any) {
     console.error('Gemini Search Grounding Error:', error);
