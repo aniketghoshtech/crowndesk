@@ -1311,6 +1311,14 @@ class DatabaseStore {
     return user;
   }
 
+  public deleteUser(id: string): boolean {
+    const index = this.data.users.findIndex(u => u.id === id);
+    if (index === -1) return false;
+    this.data.users.splice(index, 1);
+    this.save();
+    return true;
+  }
+
   // --- Cases ---
   public getAllCases(): CaseRecord[] {
     return this.data.cases;
@@ -1350,6 +1358,14 @@ class DatabaseStore {
     Object.assign(caseRec, updates, { updatedAt: new Date().toISOString() });
     this.save();
     return caseRec;
+  }
+
+  public deleteCase(id: string): boolean {
+    const index = this.data.cases.findIndex(c => c.id.toUpperCase() === id.trim().toUpperCase());
+    if (index === -1) return false;
+    this.data.cases.splice(index, 1);
+    this.save();
+    return true;
   }
 
   // --- Services & Pricing ---

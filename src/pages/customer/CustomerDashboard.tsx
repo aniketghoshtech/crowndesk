@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { CaseRecord, CaseFile, InvoiceRecord } from '../../types';
 import { CaseTimelineView } from '../../components/case/CaseTimelineView';
 import { Dental3DViewer } from '../../components/3d/Dental3DViewer';
@@ -37,6 +38,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
   onOpenAiChat
 }) => {
   const { user } = useAuth();
+  const toast = useToast();
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,10 +101,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
         setCurrentInvoice(res.invoices[0]);
         setInvoiceModalOpen(true);
       } else {
-        alert('Invoice is generated upon case payment completion.');
+        toast.info('Invoice is generated upon case payment completion.');
       }
     } catch (err: any) {
-      alert(err.message || 'Could not fetch invoice');
+      toast.error(err.message || 'Could not fetch invoice');
     }
   };
 
@@ -113,9 +115,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
       const res = await api.approveCase(selectedCase.id, 'Doctor approved CAD anatomy design.');
       setSelectedCase(res.case);
       setCases(prev => prev.map(c => (c.id === res.case.id ? res.case : c)));
-      alert('Design successfully approved! Status moved to COMPLETED.');
+      toast.success('Design successfully approved! Status moved to COMPLETED.');
     } catch (err: any) {
-      alert(err.message || 'Failed to approve case');
+      toast.error(err.message || 'Failed to approve case');
     } finally {
       setActionLoading(false);
     }
@@ -131,9 +133,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
       setCases(prev => prev.map(c => (c.id === res.case.id ? res.case : c)));
       setRevisionModalOpen(false);
       setRevisionReason('');
-      alert('Revision request sent to the CAD technician. Status moved to REVISION.');
+      toast.success('Revision request sent to the CAD technician. Status moved to REVISION.');
     } catch (err: any) {
-      alert(err.message || 'Failed to submit revision');
+      toast.error(err.message || 'Failed to submit revision');
     } finally {
       setActionLoading(false);
     }
@@ -146,9 +148,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
       const res = await api.deliverCase(selectedCase.id, 'Client acknowledged final file download.');
       setSelectedCase(res.case);
       setCases(prev => prev.map(c => (c.id === res.case.id ? res.case : c)));
-      alert('Case marked as DELIVERED.');
+      toast.success('Case marked as DELIVERED.');
     } catch (err: any) {
-      alert(err.message || 'Failed to confirm delivery');
+      toast.error(err.message || 'Failed to confirm delivery');
     } finally {
       setActionLoading(false);
     }
@@ -327,10 +329,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                           })
                         }
                         className="px-3.5 py-2 bg-gradient-to-r from-cyan-950 to-blue-950 hover:from-cyan-900 hover:to-blue-900 border border-cyan-500/40 rounded-xl text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
-                        title="Analyze case margins, materials, and clinical parameters with Gemini"
+                        title="Analyze case margins, materials, and clinical parameters with crowndesk bot"
                       >
                         <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                        <span>Ask Gemini CAD</span>
+                        <span>crowndesk bot</span>
                       </button>
                     )}
 

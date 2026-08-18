@@ -485,6 +485,31 @@ export const api = {
     return handleResponse(res, 'Failed to create user');
   },
 
+  async updateAdminUser(userId: string, data: any) {
+    const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+    return handleResponse(res, 'Failed to update employee');
+  },
+
+  async deleteAdminUser(userId: string) {
+    const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res, 'Failed to delete employee');
+  },
+
+  async toggleAdminUserStatus(userId: string) {
+    const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}/toggle-status`, {
+      method: 'PATCH',
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res, 'Failed to toggle employee status');
+  },
+
   async adminResetUserPassword(userId: string, newPassword: string, forceChange = true) {
     const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}/reset-password`, {
       method: 'POST',
@@ -499,6 +524,58 @@ export const api = {
       headers: getAuthHeaders()
     });
     return handleResponse<{ customers: any[] }>(res, 'Failed to fetch customers');
+  },
+
+  async createAdminCustomer(data: any) {
+    const res = await fetch(`${API_BASE}/admin/customers`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+    return handleResponse(res, 'Failed to create customer');
+  },
+
+  async updateAdminCustomer(customerId: string, data: any) {
+    const res = await fetch(`${API_BASE}/admin/customers/${encodeURIComponent(customerId)}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+    return handleResponse(res, 'Failed to update customer');
+  },
+
+  async deleteAdminCustomer(customerId: string) {
+    const res = await fetch(`${API_BASE}/admin/customers/${encodeURIComponent(customerId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res, 'Failed to delete customer');
+  },
+
+  async createAdminCase(caseData: any) {
+    const res = await fetch(`${API_BASE}/admin/cases`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(caseData)
+    });
+    return handleResponse(res, 'Failed to create case');
+  },
+
+  async updateAdminCase(caseId: string, caseData: any) {
+    const res = await fetch(`${API_BASE}/admin/cases/${encodeURIComponent(caseId)}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(caseData)
+    });
+    return handleResponse(res, 'Failed to update case');
+  },
+
+  async deleteAdminCase(caseId: string) {
+    const res = await fetch(`${API_BASE}/admin/cases/${encodeURIComponent(caseId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res, 'Failed to delete case');
   },
 
   async getAdminFiles(): Promise<{ files: any[]; totalFiles: number }> {

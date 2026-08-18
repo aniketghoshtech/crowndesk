@@ -382,7 +382,7 @@ High-translucency multilayer zirconia (5Y-PSZ anterior, 3Y-TZP posterior) requir
                 className="px-5 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-2xl shadow-lg shadow-cyan-500/25 transition flex items-center gap-2"
               >
                 <Bot className="w-4 h-4" />
-                <span>Open Multi-Turn Gemini Assistant</span>
+                <span>Open crowndesk bot</span>
               </button>
             )}
           </div>

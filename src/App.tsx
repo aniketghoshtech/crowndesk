@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
 import { ForcePasswordChangeModal } from './components/auth/ForcePasswordChangeModal';
@@ -120,13 +121,13 @@ const MainApp: React.FC = () => {
         )}
       </main>
 
-      {/* Floating Gemini AI Assistant Widget */}
+      {/* Floating CrownDesk Bot AI Assistant Widget */}
       <div className="fixed bottom-5 right-5 z-40">
         <button
           type="button"
           onClick={() => handleOpenAiChat()}
           className="group relative flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-full shadow-2xl shadow-cyan-500/30 border border-cyan-400/40 hover:scale-105 transition duration-200"
-          title="Open CrownDesk Gemini Dental CAD Assistant"
+          title="Open crowndesk bot"
         >
           {/* Animated pulse ring */}
           <span className="absolute -inset-1 rounded-full bg-cyan-400/30 animate-ping pointer-events-none opacity-40" />
@@ -137,10 +138,10 @@ const MainApp: React.FC = () => {
 
           <div className="flex flex-col text-left leading-none">
             <span className="text-xs font-black tracking-wide flex items-center gap-1">
-              Gemini CAD AI <Sparkles className="w-3 h-3 text-cyan-300" />
+              crowndesk bot <Sparkles className="w-3 h-3 text-cyan-300" />
             </span>
             <span className="text-[10px] text-cyan-200/80 font-medium">
-              Search Grounding Active
+              CAD Assistant Active
             </span>
           </div>
         </button>
@@ -164,8 +165,10 @@ const MainApp: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainApp />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <MainApp />
+      </AuthProvider>
+    </ToastProvider>
   );
 }

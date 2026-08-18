@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { db, hashPassword } from '../db/store';
 import { getAuthenticatedUser } from './auth';
-import { User, PaymentRecord, InvoiceRecord, FullPaymentSettings, StorageConfig } from '../models/types';
+import { User, PaymentRecord, InvoiceRecord, FullPaymentSettings, StorageConfig, CaseRecord } from '../models/types';
 
 const router = express.Router();
 
@@ -150,11 +150,11 @@ router.get('/employees', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 3. POST /api/admin/employees - Create New CAD Designer
+// 3. POST /api/admin/employees - Create New CAD Designer or Staff
 router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const { name, email, phone, specialization, initialPassword = 'Designer@123' } = req.body;
+    const { name, email, phone, specialization, role = 'DESIGNER_EMPLOYEE', initialPassword = 'Designer@123' } = req.body;
 
     if (!name || !email) {
       res.status(400).json({ error: 'Name and email are required.' });
@@ -167,12 +167,14 @@ router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
       return;
     }
 
+    const assignedRole = role === 'ADMIN' ? 'ADMIN' : (role === 'SUPER_ADMIN' && adminUser.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'DESIGNER_EMPLOYEE');
+
     const newEmp: User = {
-      id: `usr-des-${Date.now()}`,
+      id: `usr-emp-${Date.now()}`,
       name: name.trim(),
       email: email.trim().toLowerCase(),
       passwordHash: hashPassword(initialPassword),
-      role: 'DESIGNER_EMPLOYEE',
+      role: assignedRole as any,
       phone: phone || '',
       clinicOrLabName: 'CrownDesk Digital CAD Division',
       specialization: specialization || 'Exocad & 3Shape Certified CAD Designer',
@@ -192,7 +194,7 @@ router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
       userRole: adminUser.role,
       action: 'EMPLOYEE_CREATED',
       targetId: newEmp.id,
-      details: `Created new designer account: ${newEmp.name} (${newEmp.email})`,
+      details: `Created new staff/designer account: ${newEmp.name} (${newEmp.email}) as ${newEmp.role}`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
@@ -201,6 +203,96 @@ router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
     res.status(201).json({ message: 'Employee created successfully.', employee: safe });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create employee.' });
+  }
+});
+
+// 3b. PUT /api/admin/employees/:id - Update Staff / Designer
+router.put('/employees/:id', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const emp = db.findUserById(req.params.id);
+    if (!emp) {
+      res.status(404).json({ error: 'Employee not found.' });
+      return;
+    }
+
+    const { name, email, phone, specialization, role, isActive } = req.body;
+    if (name) emp.name = name.trim();
+    if (email && email.toLowerCase() !== emp.email.toLowerCase()) {
+      const existing = db.findUserByEmail(email);
+      if (existing && existing.id !== emp.id) {
+        res.status(400).json({ error: 'Email is already in use by another account.' });
+        return;
+      }
+      emp.email = email.trim().toLowerCase();
+    }
+    if (phone !== undefined) emp.phone = phone;
+    if (specialization !== undefined) emp.specialization = specialization;
+    if (role && (adminUser.role === 'SUPER_ADMIN' || (role !== 'SUPER_ADMIN'))) {
+      emp.role = role;
+    }
+    if (isActive !== undefined) emp.isActive = Boolean(isActive);
+    emp.updatedAt = new Date().toISOString();
+
+    db.updateUser(emp.id, emp);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'EMPLOYEE_UPDATED',
+      targetId: emp.id,
+      details: `Admin updated employee details for ${emp.name} (${emp.email})`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    const { passwordHash, ...safe } = emp;
+    res.json({ message: 'Employee updated successfully.', employee: safe });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update employee.' });
+  }
+});
+
+// 3c. DELETE /api/admin/employees/:id - Delete Staff / Designer
+router.delete('/employees/:id', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const emp = db.findUserById(req.params.id);
+    if (!emp) {
+      res.status(404).json({ error: 'Employee not found.' });
+      return;
+    }
+
+    if (emp.id === adminUser.id) {
+      res.status(400).json({ error: 'Cannot delete your own active administrative account.' });
+      return;
+    }
+
+    if (emp.role === 'SUPER_ADMIN') {
+      const superAdmins = db.getAllUsers().filter(u => u.role === 'SUPER_ADMIN');
+      if (superAdmins.length <= 1) {
+        res.status(400).json({ error: 'Cannot delete the only remaining Super Admin account.' });
+        return;
+      }
+    }
+
+    db.deleteUser(emp.id);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'EMPLOYEE_DELETED',
+      targetId: emp.id,
+      details: `Admin deleted staff/designer account: ${emp.name} (${emp.email})`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.json({ message: `Employee ${emp.name} deleted successfully.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete employee.' });
   }
 });
 
@@ -280,7 +372,7 @@ router.get('/customers', requireAdmin, (req: Request, res: Response): void => {
         const { passwordHash, ...safe } = c;
         const custCases = cases.filter(item => item.customerId === c.id);
         const totalSpent = payments
-          .filter(p => p.customerId === c.id && p.status === 'SUCCESS')
+          .filter(p => p.customerId === c.id && (p.status === 'SUCCESS' || p.status === 'PAID'))
           .reduce((sum, p) => sum + p.amount, 0);
 
         return {
@@ -294,6 +386,349 @@ router.get('/customers', requireAdmin, (req: Request, res: Response): void => {
     res.json({ customers });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch customers.' });
+  }
+});
+
+// 5b. POST /api/admin/customers - Create New Customer (Doctor / Dental Lab)
+router.post('/customers', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const { name, email, phone, clinicOrLabName, address, city, state, country = 'India', initialPassword = 'Customer@123' } = req.body;
+
+    if (!name || !email) {
+      res.status(400).json({ error: 'Name and email are required.' });
+      return;
+    }
+
+    const existing = db.findUserByEmail(email);
+    if (existing) {
+      res.status(400).json({ error: 'An account with this email already exists.' });
+      return;
+    }
+
+    const newCust: User = {
+      id: `usr-doc-${Date.now()}`,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      passwordHash: hashPassword(initialPassword),
+      role: 'DOCTOR_LAB',
+      phone: phone || '',
+      clinicOrLabName: clinicOrLabName || `${name.trim()}'s Dental Clinic`,
+      address: address || '',
+      city: city || '',
+      state: state || '',
+      country: country || 'India',
+      isActive: true,
+      isEmailVerified: true,
+      forcePasswordChange: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    db.addUser(newCust);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'CUSTOMER_CREATED',
+      targetId: newCust.id,
+      details: `Created new customer: ${newCust.name} (${newCust.clinicOrLabName})`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    const { passwordHash, ...safe } = newCust;
+    res.status(201).json({ message: 'Customer account created successfully.', customer: safe });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create customer.' });
+  }
+});
+
+// 5c. PUT /api/admin/customers/:id - Update Customer Details
+router.put('/customers/:id', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const cust = db.findUserById(req.params.id);
+    if (!cust) {
+      res.status(404).json({ error: 'Customer not found.' });
+      return;
+    }
+
+    const { name, email, phone, clinicOrLabName, address, city, state, country, isActive } = req.body;
+    if (name) cust.name = name.trim();
+    if (email && email.toLowerCase() !== cust.email.toLowerCase()) {
+      const existing = db.findUserByEmail(email);
+      if (existing && existing.id !== cust.id) {
+        res.status(400).json({ error: 'Email is already taken.' });
+        return;
+      }
+      cust.email = email.trim().toLowerCase();
+    }
+    if (phone !== undefined) cust.phone = phone;
+    if (clinicOrLabName !== undefined) cust.clinicOrLabName = clinicOrLabName;
+    if (address !== undefined) cust.address = address;
+    if (city !== undefined) cust.city = city;
+    if (state !== undefined) cust.state = state;
+    if (country !== undefined) cust.country = country;
+    if (isActive !== undefined) cust.isActive = Boolean(isActive);
+    cust.updatedAt = new Date().toISOString();
+
+    db.updateUser(cust.id, cust);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'CUSTOMER_UPDATED',
+      targetId: cust.id,
+      details: `Admin updated customer: ${cust.name} (${cust.email})`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    const { passwordHash, ...safe } = cust;
+    res.json({ message: 'Customer updated successfully.', customer: safe });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update customer.' });
+  }
+});
+
+// 5d. DELETE /api/admin/customers/:id - Delete Customer Account
+router.delete('/customers/:id', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const cust = db.findUserById(req.params.id);
+    if (!cust) {
+      res.status(404).json({ error: 'Customer not found.' });
+      return;
+    }
+
+    db.deleteUser(cust.id);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'CUSTOMER_DELETED',
+      targetId: cust.id,
+      details: `Admin deleted customer account: ${cust.name} (${cust.email})`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.json({ message: `Customer ${cust.name} deleted successfully.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete customer.' });
+  }
+});
+
+// 5e. POST /api/admin/cases - Admin Creates Case for any Customer
+router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const {
+      customerId,
+      patientName,
+      doctorName,
+      serviceId,
+      serviceName,
+      unitsQuantity = 1,
+      teethNumbers = [],
+      shade = 'A2',
+      material,
+      instructions = '',
+      priority = 'STANDARD',
+      dueDate,
+      assignedDesignerId
+    } = req.body;
+
+    if (!patientName || !serviceName) {
+      res.status(400).json({ error: 'Patient name and Service name are required.' });
+      return;
+    }
+
+    let customer = customerId ? db.findUserById(customerId) : undefined;
+    if (!customer) {
+      customer = db.getAllUsers().find(u => u.role === 'DOCTOR_LAB');
+    }
+
+    const newCaseId = db.generateNextCaseId();
+    const now = new Date().toISOString();
+    const service = serviceId ? db.findServiceById(serviceId) : undefined;
+    const unitPrice = service ? (service.unitPriceINR || 799) : 799;
+    const subtotal = unitPrice * Number(unitsQuantity);
+    const taxSettings = db.getRawData().taxSettings || { taxEnabled: true, taxPercent: 18 };
+    const taxAmount = taxSettings.taxEnabled ? subtotal * (taxSettings.taxPercent / 100) : 0;
+    const finalTotalAmount = subtotal + taxAmount;
+
+    let assignedDesignerName = undefined;
+    if (assignedDesignerId) {
+      const designer = db.findUserById(assignedDesignerId);
+      if (designer) assignedDesignerName = designer.name;
+    }
+
+    const newCase: CaseRecord = {
+      id: newCaseId,
+      customerId: customer ? customer.id : adminUser.id,
+      customerName: customer ? customer.name : (doctorName || adminUser.name),
+      customerClinic: customer ? (customer.clinicOrLabName || customer.name) : 'CrownDesk Lab Client',
+      customerEmail: customer ? customer.email : 'client@crowndesk.com',
+      customerPhone: customer ? customer.phone : '',
+      doctorName: doctorName || (customer ? customer.name : 'Dr. Client'),
+      patientName: patientName.trim(),
+      patientRef: patientName.trim(),
+      serviceId: service ? service.id : 'srv-crown',
+      serviceName: serviceName || (service ? service.name : 'Crown'),
+      serviceCode: service ? service.code : 'CROWN',
+      material: material || (service?.materials?.[0] || 'Zirconia Multi-Layer (3D Pro)'),
+      shade: shade || 'A2',
+      unitsQuantity: Number(unitsQuantity),
+      teeth: (teethNumbers.length > 0 ? teethNumbers : ['11']).map((t: string) => ({
+        toothNumber: String(t),
+        serviceCode: service ? service.code : 'CROWN',
+        shade: shade || 'A2',
+        material: material || 'Zirconia Multi-Layer (3D Pro)'
+      })),
+      teethNumbers: teethNumbers.length > 0 ? teethNumbers : ['11'],
+      instructions: instructions || 'Standard anatomical contours and precision contacts.',
+      dueDate: dueDate || new Date(Date.now() + 86400000 * 2).toISOString(),
+      priority: priority || 'STANDARD',
+      status: assignedDesignerId ? 'ASSIGNED' : 'NEW',
+      assignedDesignerId: assignedDesignerId || undefined,
+      assignedDesignerName: assignedDesignerName,
+      paymentStatus: 'PAID',
+      unitPrice,
+      currency: 'INR',
+      subtotal,
+      discountAmount: 0,
+      offerDiscountAmount: 0,
+      taxAmount,
+      finalTotalAmount,
+      finalStlUnlocked: true,
+      files: [],
+      timeline: [
+        {
+          id: `tl-${Date.now()}`,
+          caseId: newCaseId,
+          timestamp: now,
+          newStatus: assignedDesignerId ? 'ASSIGNED' : 'NEW',
+          action: 'Case Created by Admin',
+          userId: adminUser.id,
+          userName: adminUser.name,
+          userRole: adminUser.role,
+          comment: `Case ${newCaseId} created directly from Admin Control Panel.`
+        }
+      ],
+      comments: [],
+      revisionHistory: [],
+      createdAt: now,
+      updatedAt: now
+    };
+
+    db.addCase(newCase);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'ADMIN_CASE_CREATED',
+      caseId: newCaseId,
+      details: `Admin ${adminUser.name} created new case ${newCaseId} for patient ${patientName}`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.status(201).json({ message: `Case ${newCaseId} created successfully.`, case: newCase });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create case.' });
+  }
+});
+
+// 5f. PUT /api/admin/cases/:id - Admin Edits Any Case Details
+router.put('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const caseRec = db.findCaseById(req.params.id);
+    if (!caseRec) {
+      res.status(404).json({ error: 'Case not found.' });
+      return;
+    }
+
+    const updates = req.body;
+    const allowedFields = [
+      'patientName', 'patientRef', 'doctorName', 'customerName', 'customerClinic',
+      'serviceId', 'serviceName', 'serviceCode', 'material', 'shade', 'unitsQuantity',
+      'teethNumbers', 'instructions', 'dueDate', 'priority', 'status',
+      'assignedDesignerId', 'assignedDesignerName', 'paymentStatus', 'subtotal',
+      'taxAmount', 'finalTotalAmount', 'finalStlUnlocked'
+    ];
+
+    allowedFields.forEach(f => {
+      if (updates[f] !== undefined) {
+        (caseRec as any)[f] = updates[f];
+      }
+    });
+
+    if (updates.assignedDesignerId !== undefined) {
+      if (updates.assignedDesignerId) {
+        const des = db.findUserById(updates.assignedDesignerId);
+        if (des) {
+          caseRec.assignedDesignerId = des.id;
+          caseRec.assignedDesignerName = des.name;
+        }
+      } else {
+        caseRec.assignedDesignerId = undefined;
+        caseRec.assignedDesignerName = undefined;
+      }
+    }
+
+    caseRec.updatedAt = new Date().toISOString();
+    db.updateCase(caseRec.id, caseRec);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'ADMIN_CASE_UPDATED',
+      caseId: caseRec.id,
+      details: `Admin ${adminUser.name} edited case details for ${caseRec.id}`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.json({ message: `Case ${caseRec.id} updated successfully.`, case: caseRec });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update case.' });
+  }
+});
+
+// 5g. DELETE /api/admin/cases/:id - Admin Deletes Case
+router.delete('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
+  try {
+    const adminUser = (req as any).adminUser as User;
+    const caseRec = db.findCaseById(req.params.id);
+    if (!caseRec) {
+      res.status(404).json({ error: 'Case not found.' });
+      return;
+    }
+
+    db.deleteCase(caseRec.id);
+
+    db.logAudit({
+      userId: adminUser.id,
+      userName: adminUser.name,
+      userRole: adminUser.role,
+      action: 'ADMIN_CASE_DELETED',
+      caseId: caseRec.id,
+      details: `Admin ${adminUser.name} deleted case ${caseRec.id} (Patient: ${caseRec.patientName})`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.json({ message: `Case ${caseRec.id} deleted successfully.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete case.' });
   }
 });
 

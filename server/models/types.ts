@@ -11,6 +11,8 @@ export interface User {
   accountType?: 'DOCTOR' | 'DENTAL_LAB';
   country?: string;
   address?: string;
+  city?: string;
+  state?: string;
   isActive: boolean;
   isEmailVerified: boolean;
   forcePasswordChange?: boolean;
@@ -108,6 +110,7 @@ export interface CaseRecord {
   customerEmail: string;
   customerPhone: string;
   patientRef: string; // e.g. "Pt. Rajesh K. #892"
+  patientName?: string;
   doctorName?: string;
   serviceId: string;
   serviceName: string;
@@ -115,6 +118,7 @@ export interface CaseRecord {
   material: string;
   shade: string;
   unitsQuantity: number;
+  teethNumbers?: string[];
   teeth: ToothItem[];
   instructions: string;
   additionalNotes?: string;

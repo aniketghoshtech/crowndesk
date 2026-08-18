@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CaseComment, User } from '../../types';
 import { Send, MessageSquare, ShieldAlert, Paperclip, CheckCheck, Clock } from 'lucide-react';
 import { api } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 
 interface CaseChatterProps {
   caseId: string;
@@ -16,6 +17,7 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
   currentUser,
   onCommentAdded
 }) => {
+  const toast = useToast();
   const [message, setMessage] = useState('');
   const [isTechnicalOnly, setIsTechnicalOnly] = useState(false);
   const [filterTech, setFilterTech] = useState<'ALL' | 'PUBLIC_ONLY' | 'TECH_ONLY'>('ALL');
@@ -32,9 +34,10 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
       await api.postCaseComment(caseId, message.trim(), isTechnicalOnly);
       setMessage('');
       setIsTechnicalOnly(false);
+      toast.success('Comment posted.');
       onCommentAdded();
     } catch (err: any) {
-      alert(err.message || 'Failed to post message');
+      toast.error(err.message || 'Failed to post message');
     } finally {
       setSubmitting(false);
     }

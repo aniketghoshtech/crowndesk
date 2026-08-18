@@ -43,6 +43,21 @@ interface GeminiDentalChatModalProps {
   initialCaseContext?: any;
 }
 
+const CROWNDESK_BOT_SYSTEM_PROMPT = `[STRICT IDENTITY & PERSONA MANDATE]
+You are "crowndesk bot", the specialized Dental CAD Intelligence and Clinical Prosthodontics Assistant for the CrownDesk digital dental platform.
+
+CRITICAL IDENTITY RULES:
+1. Identity: You MUST strictly identify yourself as "crowndesk bot". Never say or suggest that you are Google Gemini, ChatGPT, Claude, or a generic AI model. When asked who you are, state that you are "crowndesk bot", the dedicated CrownDesk Dental CAD Technical Assistant.
+2. Technical Persona: You are an expert prosthodontic and dental CAD/CAM specialist. Maintain an authoritative, professional, and precise technical demeanor at all times.
+3. Domain Knowledge: Provide comprehensive, clinically validated guidance on:
+   - Exocad, 3Shape, and Dental Wings design strategies
+   - Margin finish lines (feather-edge, deep chamfer, rounded shoulder)
+   - Minimal thickness requirements (Monolithic Zirconia 0.6–0.8mm, E.max 1.0–1.2mm, Titanium/CoCr 0.5mm, PMMA 1.0mm)
+   - Multi-unit bridge connector cross-sectional areas (≥9 mm² anterior, ≥12–16 mm² posterior)
+   - Emergence profiles, cement gaps, drill compensation, and dynamic occlusion clearance
+   - Dental materials, sintering schedules, and 3D printing resin indications
+4. Output Style: Use structured Markdown with crisp bullet points, bold key specifications, and clinically actionable takeaways.`;
+
 export const GeminiDentalChatModal: React.FC<GeminiDentalChatModalProps> = ({
   isOpen,
   onClose,
@@ -61,9 +76,9 @@ export const GeminiDentalChatModal: React.FC<GeminiDentalChatModalProps> = ({
     {
       id: 'welcome',
       role: 'model',
-      text: `👋 **Welcome to CrownDesk Dental CAD AI Assistant!**
+      text: `👋 **Welcome to crowndesk bot!**
 
-I am powered by Google Gemini models with **Search Grounding** & clinical prosthodontic knowledge.
+I am your CrownDesk intelligent assistant powered by Google Gemini models with **Search Grounding** & clinical prosthodontic knowledge.
 
 **How can I assist you today?**
 - 🦷 **Margin & Occlusion Analysis**: Check minimum wall thickness, prep taper, or connector dimensions for bridges.
@@ -129,7 +144,8 @@ I am powered by Google Gemini models with **Search Grounding** & clinical prosth
         model,
         role,
         enableSearch,
-        caseContext: initialCaseContext || null
+        caseContext: initialCaseContext || null,
+        customSystemPrompt: CROWNDESK_BOT_SYSTEM_PROMPT
       });
 
       const botMessage: Message = {
@@ -200,7 +216,7 @@ I am powered by Google Gemini models with **Search Grounding** & clinical prosth
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base text-slate-100">CrownDesk Gemini CAD Intelligence</h3>
+                <h3 className="font-bold text-sm sm:text-base text-slate-100">crowndesk bot</h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" /> Live
                 </span>
@@ -459,7 +475,7 @@ I am powered by Google Gemini models with **Search Grounding** & clinical prosth
               type="text"
               value={inputPrompt}
               onChange={e => setInputPrompt(e.target.value)}
-              placeholder={`Ask CrownDesk AI with ${model}... (e.g. margin taper, bridge dimensions, search materials)`}
+              placeholder="Ask crowndesk bot... (e.g. margin taper, bridge connector specs, Exocad parameters)"
               disabled={loading}
               className="w-full bg-slate-900 border border-slate-700 focus:border-cyan-500 rounded-2xl pl-4 pr-10 py-3 text-xs sm:text-sm text-slate-100 focus:outline-none transition"
             />

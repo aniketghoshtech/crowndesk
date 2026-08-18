@@ -26,15 +26,15 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
   const [mode, setMode] = useState<'LOGIN' | 'FORGOT_PASSWORD' | 'VERIFY_RESET'>('LOGIN');
 
   // Login form state
-  const [email, setEmail] = useState('anuragnishad895@gmail.com');
-  const [password, setPassword] = useState('anurag@133');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
 
   // Forgot password & OTP reset state
-  const [resetEmail, setResetEmail] = useState('anuragnishad895@gmail.com');
+  const [resetEmail, setResetEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -184,7 +184,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required
-                  placeholder="anuragnishad895@gmail.com"
+                  placeholder="admin@crowndesk.in"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500 transition"
                 />
               </div>
@@ -249,7 +249,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
                   value={resetEmail}
                   onChange={e => setResetEmail(e.target.value)}
                   required
-                  placeholder="anuragnishad895@gmail.com"
+                  placeholder="admin@crowndesk.in"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500 transition"
                 />
               </div>
@@ -376,26 +376,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onNavigate }) =>
             </div>
           </form>
         )}
-
-        {/* Quick Credentials Preset Helper for Verification */}
-        <div className="mt-6 pt-4 border-t border-slate-800 space-y-2">
-          <div className="text-[11px] text-slate-400 text-center font-medium">
-            Master Super Admin Credentials:
-          </div>
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-            <div className="flex justify-between items-center text-[11px]">
-              <span className="text-slate-400">Super Admin Email:</span>
-              <span className="font-mono text-purple-300 font-bold">anuragnishad895@gmail.com</span>
-            </div>
-            <div className="flex justify-between items-center text-[11px]">
-              <span className="text-slate-400">Initial Password:</span>
-              <span className="font-mono text-amber-300 font-bold">anurag@133</span>
-            </div>
-            <div className="text-[10px] text-slate-500 italic pt-1 border-t border-slate-800/80">
-              *First login triggers mandatory password change to enforce security.
-            </div>
-          </div>
-        </div>
 
       </div>
     </div>

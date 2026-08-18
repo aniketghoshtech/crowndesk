@@ -95,18 +95,18 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenA
               <span>Pricing & Offers</span>
             </button>
 
-            {/* Gemini AI Assistant Button */}
+            {/* CrownDesk Bot AI Assistant Button */}
             {onOpenAiChat && (
               <button
                 type="button"
                 onClick={() => onOpenAiChat()}
                 className="px-3 py-1.5 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900/80 hover:to-blue-900/80 border border-cyan-500/40 rounded-xl text-cyan-300 font-bold flex items-center gap-1.5 shadow-sm transition hover:border-cyan-400 hover:scale-[1.02]"
-                title="Open CrownDesk Gemini AI Assistant with Search Grounding"
+                title="Open crowndesk bot"
               >
                 <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                <span>AI Assistant</span>
+                <span>crowndesk bot</span>
                 <span className="px-1.5 py-0.2 text-[9px] bg-cyan-500/20 text-cyan-300 rounded-md border border-cyan-500/30">
-                  Gemini
+                  Live
                 </span>
               </button>
             )}
@@ -191,7 +191,13 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenA
                 )}
 
                 <button
-                  onClick={logout}
+                  onClick={async () => {
+                    if (window.location.hash) {
+                      window.history.replaceState(null, '', window.location.pathname);
+                    }
+                    await logout();
+                    handleNav('landing');
+                  }}
                   className="p-1.5 text-slate-400 hover:text-rose-400 rounded-xl hover:bg-slate-800 transition"
                   title="Logout"
                 >
@@ -278,7 +284,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenA
               className="w-full text-left px-3 py-2 text-xs font-bold text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 rounded-xl flex items-center justify-between"
             >
               <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" /> CrownDesk Gemini AI Assistant
+                <Sparkles className="w-4 h-4 text-cyan-400" /> crowndesk bot
               </span>
               <span className="px-2 py-0.5 text-[9px] bg-cyan-500/20 text-cyan-300 rounded font-mono">Live</span>
             </button>
@@ -322,7 +328,13 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenA
                 </button>
               )}
               <button
-                onClick={logout}
+                onClick={async () => {
+                  if (window.location.hash) {
+                    window.history.replaceState(null, '', window.location.pathname);
+                  }
+                  await logout();
+                  handleNav('landing');
+                }}
                 className="w-full text-left px-3 py-2 text-xs font-bold text-rose-400 hover:bg-slate-900 rounded-xl flex items-center gap-2"
               >
                 <LogOut className="w-4 h-4" /> Logout

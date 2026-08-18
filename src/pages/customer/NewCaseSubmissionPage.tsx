@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { ToothSelectorChart } from '../../components/case/ToothSelectorChart';
 import { ServicePricing, Offer } from '../../types';
 import {
@@ -33,6 +34,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
   onNavigate
 }) => {
   const { user, isDoctor } = useAuth();
+  const toast = useToast();
 
   // Reference lists
   const [services, setServices] = useState<ServicePricing[]>([]);
@@ -42,7 +44,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState<number | ''>('');
   const [patientGender, setPatientGender] = useState<'MALE' | 'FEMALE' | 'OTHER'>('MALE');
-  const [clinicName, setClinicName] = useState(user?.clinicName || '');
+  const [clinicName, setClinicName] = useState(user?.clinicOrLabName || user?.clinicName || '');
   const [selectedServiceId, setSelectedServiceId] = useState(initialData?.serviceId || '');
   const [restorationType, setRestorationType] = useState('Full Anatomical Crown');
   const [material, setMaterial] = useState('Multi-layer Zirconia (3D Pro)');
@@ -113,7 +115,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
     setError('');
 
     if (!user) {
-      alert('Please log in as a Doctor or Lab to submit a CAD case.');
+      toast.warning('Please log in as a Doctor or Lab to submit a CAD case.');
       onNavigate('auth');
       return;
     }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Offer, ServicePricing } from '../../types';
 import { api } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import { 
   Tag, 
   PlusCircle, 
@@ -68,6 +69,7 @@ export const AdminOffersManager: React.FC<AdminOffersManagerProps> = ({
   services,
   onRefresh
 }) => {
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
   const [formData, setFormData] = useState<OfferFormData>(DEFAULT_OFFER_FORM);
@@ -181,19 +183,20 @@ export const AdminOffersManager: React.FC<AdminOffersManagerProps> = ({
   const handleToggleActive = async (id: string, code: string) => {
     try {
       await api.toggleOffer(id);
+      toast.success(`Toggled status for offer ${code}`);
       onRefresh();
     } catch (err: any) {
-      alert(`Failed to toggle offer status for ${code}: ${err.message || 'Unknown error'}`);
+      toast.error(`Failed to toggle offer status for ${code}: ${err.message || 'Unknown error'}`);
     }
   };
 
   const handleDeleteOffer = async (id: string, code: string) => {
-    if (!confirm(`Are you sure you want to permanently delete the promo offer "${code}"?`)) return;
     try {
       await api.deleteOffer(id);
+      toast.success(`Offer ${code} deleted successfully.`);
       onRefresh();
     } catch (err: any) {
-      alert(`Failed to delete offer ${code}: ${err.message || 'Unknown error'}`);
+      toast.error(`Failed to delete offer ${code}: ${err.message || 'Unknown error'}`);
     }
   };
 

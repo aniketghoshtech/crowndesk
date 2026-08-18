@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import {
   AdminAnalytics,
   User,
@@ -36,6 +37,7 @@ import {
   Settings,
   ShieldAlert,
   PlusCircle,
+  Plus,
   KeyRound,
   CheckCircle2,
   AlertCircle,
@@ -59,8 +61,19 @@ import {
   Calendar,
   Zap,
   UserCheck,
-  Hourglass
+  Hourglass,
+  LogOut,
+  Edit2,
+  Trash2,
+  UserPlus,
+  FolderPlus,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
+import { AdminCaseModal } from './AdminCaseModal';
+import { AdminCustomerModal } from './AdminCustomerModal';
+import { AdminEmployeeModal } from './AdminEmployeeModal';
+import { AdminDeleteConfirmModal } from './AdminDeleteConfirmModal';
 
 interface AdminDashboardProps {
   initialCaseId?: string;
@@ -90,8 +103,24 @@ export type AdminTab =
   | 'AUDIT_LOGS';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, initialTab, onNavigate }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab || (initialCaseId ? 'CASES' : 'DASHBOARD'));
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      await logout();
+      onNavigate('landing');
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   // Core Data States
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
@@ -133,6 +162,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
   const [broadcastModal, setBroadcastModal] = useState(false);
   const [broadcastData, setBroadcastData] = useState({ title: '', message: '', targetRole: 'ALL', type: 'INFO' });
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
+
+  // Dedicated CRUD Modals State
+  const [caseModal, setCaseModal] = useState<{ open: boolean; editingCase: CaseRecord | null }>({
+    open: false,
+    editingCase: null
+  });
+  const [customerModal, setCustomerModal] = useState<{ open: boolean; editingCustomer: any | null }>({
+    open: false,
+    editingCustomer: null
+  });
+  const [employeeModal, setEmployeeModal] = useState<{ open: boolean; editingEmployee: User | null; defaultRole: string }>({
+    open: false,
+    editingEmployee: null,
+    defaultRole: 'DESIGNER_EMPLOYEE'
+  });
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    open: boolean;
+    type: 'CASE' | 'CUSTOMER' | 'EMPLOYEE' | 'DESIGNER';
+    id: string;
+    name: string;
+    loading: boolean;
+  }>({
+    open: false,
+    type: 'CASE',
+    id: '',
+    name: '',
+    loading: false
+  });
 
   // SEO Form
   const [seoForm, setSeoForm] = useState({ siteTitle: '', metaDescription: '', keywords: '', canonicalUrl: '', contactPhone: '', contactEmail: '' });
@@ -270,6 +327,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       fetchAllData();
     } catch (err: any) {
       alert(err.message || 'Staff creation failed');
+    }
+  };
+
+  // Case CRUD Handlers
+  const handleSaveCase = async (caseData: any) => {
+    if (caseModal.editingCase) {
+      await api.updateAdminCase(caseModal.editingCase.id, caseData);
+    } else {
+      await api.createAdminCase(caseData);
+    }
+    setCaseModal({ open: false, editingCase: null });
+    fetchAllData();
+  };
+
+  const handleDeleteCase = (c: CaseRecord) => {
+    setDeleteConfirm({
+      open: true,
+      type: 'CASE',
+      id: c.id,
+      name: `Patient: ${c.patientName} (Doctor: ${c.doctorName})`,
+      loading: false
+    });
+  };
+
+  // Customer CRUD Handlers
+  const handleSaveCustomer = async (custData: any) => {
+    if (customerModal.editingCustomer) {
+      await api.updateAdminCustomer(customerModal.editingCustomer.id, custData);
+    } else {
+      await api.createAdminCustomer(custData);
+    }
+    setCustomerModal({ open: false, editingCustomer: null });
+    fetchAllData();
+  };
+
+  const handleDeleteCustomer = (cust: any) => {
+    setDeleteConfirm({
+      open: true,
+      type: 'CUSTOMER',
+      id: cust.id,
+      name: `${cust.name} (${cust.clinicOrLabName || cust.email})`,
+      loading: false
+    });
+  };
+
+  // Employee & Designer CRUD Handlers
+  const handleSaveEmployee = async (empData: any) => {
+    if (employeeModal.editingEmployee) {
+      await api.updateAdminUser(employeeModal.editingEmployee.id, empData);
+    } else {
+      await api.createAdminUser(empData);
+    }
+    setEmployeeModal({ open: false, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' });
+    fetchAllData();
+  };
+
+  const handleToggleEmployeeStatus = async (emp: User) => {
+    try {
+      await api.toggleAdminUserStatus(emp.id);
+      fetchAllData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to toggle status');
+    }
+  };
+
+  const handleDeleteEmployee = (emp: User, isDesigner = false) => {
+    if (user?.id === emp.id) {
+      alert('You cannot delete your own administrative session account.');
+      return;
+    }
+    setDeleteConfirm({
+      open: true,
+      type: isDesigner ? 'DESIGNER' : 'EMPLOYEE',
+      id: emp.id,
+      name: `${emp.name} (${emp.email})`,
+      loading: false
+    });
+  };
+
+  // Unified Delete Confirmation Execution
+  const handleConfirmDelete = async () => {
+    setDeleteConfirm(prev => ({ ...prev, loading: true }));
+    try {
+      if (deleteConfirm.type === 'CASE') {
+        await api.deleteAdminCase(deleteConfirm.id);
+      } else if (deleteConfirm.type === 'CUSTOMER') {
+        await api.deleteAdminCustomer(deleteConfirm.id);
+      } else if (deleteConfirm.type === 'EMPLOYEE' || deleteConfirm.type === 'DESIGNER') {
+        await api.deleteAdminUser(deleteConfirm.id);
+      }
+      setDeleteConfirm({ open: false, type: 'CASE', id: '', name: '', loading: false });
+      fetchAllData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete record');
+      setDeleteConfirm(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -413,22 +565,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {user && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-slate-300">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-semibold text-slate-200">{user.name || user.email}</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded font-mono font-bold">
+                {user.role}
+              </span>
+            </div>
+          )}
+
           <button
             onClick={fetchAllData}
             disabled={loading}
             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+            title="Refresh all admin datasets"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-purple-400' : ''}`} />
-            <span>Refresh All Data</span>
+            <span className="hidden sm:inline">Refresh All Data</span>
+            <span className="sm:hidden">Refresh</span>
           </button>
 
           <button
             onClick={() => setBroadcastModal(true)}
             className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-purple-600/20 flex items-center gap-1.5 transition"
+            title="Broadcast announcement to customers or staff"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Broadcast Alert</span>
+            <span className="hidden sm:inline">Broadcast Alert</span>
+            <span className="sm:hidden">Broadcast</span>
+          </button>
+
+          {/* Admin Logout Button */}
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="px-3.5 py-2 bg-rose-950/50 hover:bg-rose-900/80 border border-rose-500/40 hover:border-rose-500/70 text-rose-300 hover:text-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+            title="Log out of CrownDesk Admin Panel"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>{loggingOut ? 'Signing Out...' : 'Logout'}</span>
           </button>
         </div>
       </div>
@@ -770,39 +947,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
                 <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-purple-400" />
-                  Department Quick Actions
+                  Administrative Quick Actions
                 </h3>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <button
-                    onClick={() => setActiveTab('CASES')}
-                    className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-semibold text-slate-300 text-left transition group"
+                    onClick={() => setCaseModal({ open: true, editingCase: null })}
+                    className="p-3 bg-purple-950/40 hover:bg-purple-900/40 border border-purple-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
                   >
-                    <div className="font-bold text-slate-100 group-hover:text-purple-300 transition">Review Cases</div>
-                    <div className="text-[10px] text-purple-400">{cases.length} Total in Pipeline</div>
+                    <div className="font-bold text-purple-300 group-hover:text-purple-200 transition flex items-center gap-1.5">
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      <span>+ New CAD Case</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Add & dispatch case</div>
                   </button>
 
                   <button
-                    onClick={() => setActiveTab('PAYMENTS')}
-                    className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-semibold text-slate-300 text-left transition group"
+                    onClick={() => setCustomerModal({ open: true, editingCustomer: null })}
+                    className="p-3 bg-blue-950/40 hover:bg-blue-900/40 border border-blue-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
                   >
-                    <div className="font-bold text-slate-100 group-hover:text-emerald-300 transition">Payment Gateways</div>
-                    <div className="text-[10px] text-emerald-400">Razorpay / Stripe / UPI</div>
+                    <div className="font-bold text-blue-300 group-hover:text-blue-200 transition flex items-center gap-1.5">
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Add Customer</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Doctor or clinic account</div>
                   </button>
 
                   <button
-                    onClick={() => setCreateStaffModal(true)}
-                    className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-semibold text-slate-300 text-left transition group"
+                    onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
+                    className="p-3 bg-cyan-950/40 hover:bg-cyan-900/40 border border-cyan-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
                   >
-                    <div className="font-bold text-slate-100 group-hover:text-cyan-300 transition">+ Add Staff</div>
-                    <div className="text-[10px] text-cyan-400">Technicians & Admins</div>
+                    <div className="font-bold text-cyan-300 group-hover:text-cyan-200 transition flex items-center gap-1.5">
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Add Designer</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">CAD specialist team</div>
                   </button>
 
                   <button
-                    onClick={() => setActiveTab('OFFERS')}
-                    className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl font-semibold text-slate-300 text-left transition group"
+                    onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'STAFF' })}
+                    className="p-3 bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
                   >
-                    <div className="font-bold text-slate-100 group-hover:text-amber-300 transition">+ Create Promo</div>
-                    <div className="text-[10px] text-amber-400">Vouchers & Discounts</div>
+                    <div className="font-bold text-emerald-300 group-hover:text-emerald-200 transition flex items-center gap-1.5">
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Add Staff</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">Technicians & admins</div>
                   </button>
                 </div>
               </div>
@@ -889,6 +1078,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setCaseModal({ open: true, editingCase: null })}
+                className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>+ New CAD Case</span>
+              </button>
+
               <input
                 type="text"
                 value={caseSearch}
@@ -997,6 +1194,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                         >
                           Assign
                         </button>
+                        <button
+                          onClick={() => setCaseModal({ open: true, editingCase: c })}
+                          className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Edit Case Details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCase(c)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Delete Case"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1017,13 +1228,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               <h2 className="text-lg font-bold text-slate-100">Registered Doctors & Dental Laboratories</h2>
               <p className="text-xs text-slate-400">Directory of clinic partners, lifetime case volume, and billing totals</p>
             </div>
-            <input
-              type="text"
-              value={customerSearch}
-              onChange={e => setCustomerSearch(e.target.value)}
-              placeholder="Search by name, clinic, email, phone..."
-              className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setCustomerModal({ open: true, editingCustomer: null })}
+                className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>+ Add Customer</span>
+              </button>
+
+              <input
+                type="text"
+                value={customerSearch}
+                onChange={e => setCustomerSearch(e.target.value)}
+                placeholder="Search by name, clinic, email, phone..."
+                className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1037,6 +1258,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   <th className="py-3 px-2">Active Cases</th>
                   <th className="py-3 px-2">Lifetime Billed</th>
                   <th className="py-3 px-2">Status</th>
+                  <th className="py-3 px-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -1059,6 +1281,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                         ACTIVE
                       </span>
                     </td>
+                    <td className="py-3 px-2 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setCustomerModal({ open: true, editingCustomer: cust })}
+                          className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Edit Customer Profile"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCustomer(cust)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Delete Customer Account"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1078,11 +1318,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               <p className="text-xs text-slate-400">Manage operations operators, dispatch managers, and user credentials</p>
             </div>
             <button
-              onClick={() => setCreateStaffModal(true)}
+              onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'STAFF' })}
               className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>Create Staff Account</span>
+              <UserPlus className="w-4 h-4" />
+              <span>+ Create Staff Account</span>
             </button>
           </div>
 
@@ -1094,7 +1334,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   <th className="py-3 px-2">Work Email</th>
                   <th className="py-3 px-2">Role</th>
                   <th className="py-3 px-2">Phone</th>
-                  <th className="py-3 px-2">Temporary Password</th>
+                  <th className="py-3 px-2">Status</th>
                   <th className="py-3 px-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1110,27 +1350,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                     </td>
                     <td className="py-3 px-2 text-slate-400">{emp.phone || 'N/A'}</td>
                     <td className="py-3 px-2">
-                      {emp.forcePasswordChange ? (
-                        <span className="text-amber-400 font-bold text-[10px]">Pending Reset</span>
+                      {emp.isActive !== false ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                          Active
+                        </span>
                       ) : (
-                        <span className="text-slate-500 text-[10px]">Active</span>
+                        <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold">
+                          Inactive
+                        </span>
                       )}
                     </td>
                     <td className="py-3 px-2 text-right">
-                      <button
-                        onClick={async () => {
-                          const newPass = prompt(`Set new password for ${emp.name}:`, 'CrownPass123!');
-                          if (newPass) {
-                            await api.adminResetUserPassword(emp.id, newPass, true);
-                            alert(`Password reset for ${emp.name}. Forced change active.`);
-                            fetchAllData();
-                          }
-                        }}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-semibold text-[11px] flex items-center gap-1 ml-auto transition"
-                      >
-                        <KeyRound className="w-3 h-3 text-cyan-400" />
-                        <span>Reset Password</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleToggleEmployeeStatus(emp)}
+                          className={`p-1.5 rounded-lg border text-xs font-semibold transition ${
+                            emp.isActive !== false
+                              ? 'bg-slate-800 hover:bg-amber-600/30 hover:text-amber-300 text-slate-300 border-slate-700'
+                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800'
+                          }`}
+                          title={emp.isActive !== false ? 'Deactivate Account' : 'Activate Account'}
+                        >
+                          {emp.isActive !== false ? <ToggleRight className="w-3.5 h-3.5 text-emerald-400" /> : <ToggleLeft className="w-3.5 h-3.5 text-rose-400" />}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const newPass = prompt(`Set new password for ${emp.name}:`, 'CrownPass123!');
+                            if (newPass) {
+                              await api.adminResetUserPassword(emp.id, newPass, true);
+                              alert(`Password reset for ${emp.name}. Forced change active.`);
+                              fetchAllData();
+                            }
+                          }}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Reset Password"
+                        >
+                          <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                        </button>
+                        <button
+                          onClick={() => setEmployeeModal({ open: true, editingEmployee: emp, defaultRole: emp.role })}
+                          className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Edit Employee"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEmployee(emp, false)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          title="Delete Employee Account"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1151,14 +1422,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               <p className="text-xs text-slate-400">Active design allocations, turnaround times, and anatomical specializations</p>
             </div>
             <button
-              onClick={() => {
-                setNewStaffData({ ...newStaffData, role: 'DESIGNER_EMPLOYEE' });
-                setCreateStaffModal(true);
-              }}
+              onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
               className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>Add CAD Designer</span>
+              <UserPlus className="w-4 h-4" />
+              <span>+ Add CAD Designer</span>
             </button>
           </div>
 
@@ -1167,31 +1435,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               const activeCount = cases.filter(c => c.assignedDesignerId === d.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
               const completedCount = cases.filter(c => c.assignedDesignerId === d.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
               return (
-                <div key={d.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-bold text-slate-100 text-sm">{d.name}</div>
-                      <div className="text-[11px] text-purple-400">{d.email}</div>
+                <div key={d.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-bold text-slate-100 text-sm">{d.name}</div>
+                        <div className="text-[11px] text-purple-400">{d.email}</div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        d.isActive !== false ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                      }`}>
+                        {d.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                      ACTIVE
-                    </span>
+
+                    <div className="text-[11px] text-slate-400">
+                      <span className="font-semibold text-slate-300">Specialization: </span>
+                      {d.specialization || 'Full Contour Zirconia & Implants'}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-center">
+                      <div className="p-2 bg-slate-900 rounded-xl">
+                        <div className="text-[10px] text-slate-400 uppercase font-bold">In Design</div>
+                        <div className="text-base font-black text-amber-400 font-mono">{activeCount}</div>
+                      </div>
+                      <div className="p-2 bg-slate-900 rounded-xl">
+                        <div className="text-[10px] text-slate-400 uppercase font-bold">Completed</div>
+                        <div className="text-base font-black text-emerald-400 font-mono">{completedCount}</div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="text-[11px] text-slate-400">
-                    <span className="font-semibold text-slate-300">Specialization: </span>
-                    {d.specialization || 'Full Contour Zirconia & Implants'}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-center">
-                    <div className="p-2 bg-slate-900 rounded-xl">
-                      <div className="text-[10px] text-slate-400 uppercase font-bold">In Design</div>
-                      <div className="text-base font-black text-amber-400 font-mono">{activeCount}</div>
-                    </div>
-                    <div className="p-2 bg-slate-900 rounded-xl">
-                      <div className="text-[10px] text-slate-400 uppercase font-bold">Completed</div>
-                      <div className="text-base font-black text-emerald-400 font-mono">{completedCount}</div>
-                    </div>
+                  <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-800/80">
+                    <button
+                      onClick={async () => {
+                        const newPass = prompt(`Set new password for ${d.name}:`, 'CrownPass123!');
+                        if (newPass) {
+                          await api.adminResetUserPassword(d.id, newPass, true);
+                          alert(`Password reset for ${d.name}. Forced change active.`);
+                          fetchAllData();
+                        }
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-800 transition"
+                      title="Reset Password"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Password</span>
+                    </button>
+                    <button
+                      onClick={() => setEmployeeModal({ open: true, editingEmployee: d, defaultRole: 'DESIGNER_EMPLOYEE' })}
+                      className="p-1.5 bg-slate-900 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-800 transition"
+                      title="Edit Designer Profile"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEmployee(d, true)}
+                      className="p-1.5 bg-slate-900 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-800 transition"
+                      title="Delete Designer Account"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               );
@@ -1642,13 +1946,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               />
             </div>
 
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
-            >
-              Update Platform & Tax Settings
-            </button>
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="submit"
+                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
+              >
+                Update Platform & Tax Settings
+              </button>
+            </div>
           </form>
+
+          {/* Admin Session Security & Logout Card */}
+          <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-5 mt-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-purple-400" />
+                  Admin Account Session & Security
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Active Administrator: <strong className="text-slate-200">{user?.name}</strong> ({user?.email}) • Authorization Role:{' '}
+                  <span className="text-purple-300 font-mono font-bold">{user?.role}</span>
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="px-4 py-2.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 hover:border-rose-500/70 text-rose-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-sm"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>{loggingOut ? 'Signing Out...' : 'Sign Out of Admin Session'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2158,6 +2490,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
           </div>
         </div>
       )}
+
+      {/* Admin CRUD Modal: Cases */}
+      <AdminCaseModal
+        isOpen={caseModal.open}
+        onClose={() => setCaseModal({ open: false, editingCase: null })}
+        onSave={handleSaveCase}
+        editingCase={caseModal.editingCase}
+        services={services}
+        customers={customers}
+        designers={designers}
+      />
+
+      {/* Admin CRUD Modal: Customers */}
+      <AdminCustomerModal
+        isOpen={customerModal.open}
+        onClose={() => setCustomerModal({ open: false, editingCustomer: null })}
+        onSave={handleSaveCustomer}
+        editingCustomer={customerModal.editingCustomer}
+      />
+
+      {/* Admin CRUD Modal: Employees & Designers */}
+      <AdminEmployeeModal
+        isOpen={employeeModal.open}
+        onClose={() => setEmployeeModal({ open: false, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
+        onSave={handleSaveEmployee}
+        editingEmployee={employeeModal.editingEmployee}
+        defaultRole={employeeModal.defaultRole}
+        isSuperAdmin={user?.role === 'SUPER_ADMIN'}
+      />
+
+      {/* Unified Delete Confirmation Modal */}
+      <AdminDeleteConfirmModal
+        isOpen={deleteConfirm.open}
+        onClose={() => setDeleteConfirm({ open: false, type: 'CASE', id: '', name: '', loading: false })}
+        onConfirm={handleConfirmDelete}
+        type={deleteConfirm.type}
+        id={deleteConfirm.id}
+        name={deleteConfirm.name}
+        loading={deleteConfirm.loading}
+      />
 
     </div>
   );

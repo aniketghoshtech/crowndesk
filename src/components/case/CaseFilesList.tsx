@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CaseFile, User } from '../../types';
 import { Download, Lock, FileCode, CheckCircle2, UploadCloud, AlertCircle, File, Eye } from 'lucide-react';
 import { api } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 
 interface CaseFilesListProps {
   caseId: string;
@@ -24,6 +25,7 @@ export const CaseFilesList: React.FC<CaseFilesListProps> = ({
   onUnlockPaymentClick,
   onPreview3D
 }) => {
+  const toast = useToast();
   const [uploading, setUploading] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<'SCAN_STL' | 'WORKING_FILE' | 'FINAL_STL' | 'PDF'>('SCAN_STL');
   const [isFinalDesign, setIsFinalDesign] = useState(false);
@@ -43,9 +45,10 @@ export const CaseFilesList: React.FC<CaseFilesListProps> = ({
       formData.append('isFinalDesign', String(isFinalDesign));
 
       await api.uploadFile(formData);
+      toast.success('File uploaded to vault successfully.');
       onFileUploaded();
     } catch (err: any) {
-      alert(err.message || 'File upload failed');
+      toast.error(err.message || 'File upload failed');
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -58,7 +61,7 @@ export const CaseFilesList: React.FC<CaseFilesListProps> = ({
       if (onUnlockPaymentClick) {
         onUnlockPaymentClick();
       } else {
-        alert('Please complete payment to unlock and download final CAD STL files.');
+        toast.warning('Please complete payment to unlock and download final CAD STL files.');
       }
       return;
     }
@@ -85,9 +88,10 @@ export const CaseFilesList: React.FC<CaseFilesListProps> = ({
         a.click();
         a.remove();
         window.URL.revokeObjectURL(url);
+        toast.success(`Downloaded ${file.originalName}`);
       })
       .catch(err => {
-        alert(err.message || 'Download failed');
+        toast.error(err.message || 'Download failed');
       });
   };
 

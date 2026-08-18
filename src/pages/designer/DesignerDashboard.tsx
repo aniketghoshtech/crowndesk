@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { CaseRecord, CaseStatus } from '../../types';
 import { CaseTimelineView } from '../../components/case/CaseTimelineView';
 import { Dental3DViewer } from '../../components/3d/Dental3DViewer';
@@ -29,6 +30,7 @@ interface DesignerDashboardProps {
 
 export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCaseId, onNavigate, onOpenAiChat }) => {
   const { user } = useAuth();
+  const toast = useToast();
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,8 +88,9 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
       );
       setSelectedCase(res.case);
       setCases(prev => prev.map(c => (c.id === res.case.id ? res.case : c)));
+      toast.success(`Case status transitioned to ${newStatus}`);
     } catch (err: any) {
-      alert(err.message || 'Status update failed');
+      toast.error(err.message || 'Status update failed');
     } finally {
       setUpdatingStatus(false);
     }
@@ -172,7 +175,7 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
                     <span className="font-mono font-bold text-amber-400">{c.id}</span>
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                        c.status === 'READY_FOR_MILLING' || c.status === 'DELIVERED'
+                        c.status === 'COMPLETED' || c.status === 'DELIVERED'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                           : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                       }`}
