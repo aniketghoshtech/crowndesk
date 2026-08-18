@@ -22,7 +22,9 @@ import {
   PricingHistoryEntry
 } from '../models/types';
 
-const DB_FILE = path.join(process.cwd(), 'crowndesk_db.json');
+const ROOT_DB_FILE = path.join(process.cwd(), 'crowndesk_db.json');
+const TMP_DB_FILE = path.join('/tmp', 'crowndesk_db.json');
+
 
 export interface DatabaseSchema {
   users: User[];
@@ -1146,8 +1148,15 @@ class DatabaseStore {
 
   private loadData(): DatabaseSchema {
     try {
-      if (fs.existsSync(DB_FILE)) {
-        const fileContent = fs.readFileSync(DB_FILE, 'utf-8');
+      let targetFile: string | null = null;
+      if (fs.existsSync(TMP_DB_FILE)) {
+        targetFile = TMP_DB_FILE;
+      } else if (fs.existsSync(ROOT_DB_FILE)) {
+        targetFile = ROOT_DB_FILE;
+      }
+
+      if (targetFile) {
+        const fileContent = fs.readFileSync(targetFile, 'utf-8');
         const parsed = JSON.parse(fileContent);
         const seed = getDefaultSeed();
         return {
@@ -1201,10 +1210,19 @@ class DatabaseStore {
   }
 
   private saveDataDirect(data: DatabaseSchema) {
+    const jsonContent = JSON.stringify(data, null, 2);
+    // 1. Attempt writing to ROOT_DB_FILE (works on Node/VPS/Render/Cloud Run)
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('Failed to write database file:', e);
+      fs.writeFileSync(ROOT_DB_FILE, jsonContent, 'utf-8');
+      return;
+    } catch (rootErr) {
+      // 2. If running on read-only serverless filesystem (Vercel / Lambda), fallback to /tmp
+      try {
+        fs.writeFileSync(TMP_DB_FILE, jsonContent, 'utf-8');
+      } catch (tmpErr) {
+        // Safe in-memory retention continues
+        console.warn('Filesystem write bypassed, persisting in-memory:', tmpErr);
+      }
     }
   }
 

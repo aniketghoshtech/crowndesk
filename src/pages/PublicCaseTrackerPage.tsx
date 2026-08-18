@@ -34,6 +34,15 @@ export const PublicCaseTrackerPage: React.FC<PublicCaseTrackerPageProps> = ({
       const res = await api.searchCase(term.trim());
       setSearchedCase(res.case);
       setIsAuthorizedFullView(!!res.isAuthorizedFullView);
+
+      // Dynamically sync document title and meta description on client side
+      if (res.case) {
+        document.title = `Case ${res.case.id} — ${res.case.serviceName || 'Dental CAD'} | CrownDesk Tracker`;
+        const metaDesc = document.querySelector('meta[name="description"]');
+        if (metaDesc) {
+          metaDesc.setAttribute('content', `Live status for Dental CAD Case ${res.case.id}: ${res.case.status.replace(/_/g, ' ')}. Units: ${res.case.unitsQuantity}. CrownDesk Dental CAD.`);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Case record not found. Please verify the Case ID.');
     } finally {

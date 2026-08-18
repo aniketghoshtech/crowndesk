@@ -1,6 +1,7 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut } from 'firebase/auth';
 import {
+  initializeFirestore,
   getFirestore,
   doc,
   setDoc,
@@ -16,20 +17,38 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+// Use long-polling transport for iframe sandbox / container compatibility to prevent 10s backend timeout warnings
+let dbInstance: any;
+try {
+  dbInstance = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
+  }, firebaseConfig.firestoreDatabaseId);
+} catch {
+  dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+
+export const db = dbInstance;
 export const auth = getAuth(app);
 export const googleAuthProvider = new GoogleAuthProvider();
 
-// Validate Connection to Firestore on app startup
+// Safe, non-blocking connection check on startup
 export async function validateFirestoreConnection(): Promise<boolean> {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+  if (!auth.currentUser) {
     return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firestore offline status:', error.message);
-    }
+  }
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Connection check timeout')), 2500)
+    );
+    await Promise.race([
+      getDocFromServer(doc(db, 'users', auth.currentUser.uid)),
+      timeoutPromise,
+    ]);
+    return true;
+  } catch {
     return false;
   }
 }
@@ -45,6 +64,7 @@ export {
   query,
   where,
   orderBy,
+  getDocFromServer,
   addDoc,
   serverTimestamp
 };

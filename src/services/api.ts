@@ -35,8 +35,13 @@ async function handleResponse<T = any>(res: Response, defaultError = 'Request fa
   }
 
   if (!data) {
-    const text = await res.text().catch(() => '');
-    data = { error: text || res.statusText || defaultError };
+    const rawText = await res.text().catch(() => '');
+    let cleanText = rawText;
+    // Strip HTML if server/hosting returned an HTML 404/500 error page
+    if (rawText.includes('<html') || rawText.includes('<!DOCTYPE') || rawText.includes('NOT_FOUND')) {
+      cleanText = `API endpoint unavailable (${res.status} ${res.statusText || 'Not Found'}).`;
+    }
+    data = { error: cleanText || res.statusText || defaultError };
   }
 
   if (!res.ok) {

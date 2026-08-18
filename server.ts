@@ -1,66 +1,53 @@
 import express from 'express';
 import path from 'path';
-import cors from 'cors';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-
-import authRoutes from './server/routes/auth';
-import caseRoutes from './server/routes/cases';
-import fileRoutes from './server/routes/files';
-import pricingRoutes, { servicesRouter, offersRouter } from './server/routes/pricing';
-import paymentRoutes, { invoicesRouter } from './server/routes/payments';
-import adminRoutes from './server/routes/admin';
-import seoRoutes from './server/routes/seo';
-import notifRoutes from './server/routes/notifications';
-import geminiRoutes from './server/routes/gemini';
+import { createExpressApp } from './server/app';
+import { tryServeCaseSeoHtml } from './server/middleware/caseSeoMiddleware';
 
 async function startServer() {
-  const app = express();
+  const app = createExpressApp();
   const PORT = Number(process.env.PORT) || 3000;
-
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-  // API Routes
-  app.use('/api/auth', authRoutes);
-  app.use('/api/cases', caseRoutes);
-  app.use('/api/files', fileRoutes);
-  app.use('/api/pricing', pricingRoutes);
-  app.use('/api/services', servicesRouter);
-  app.use('/api/offers', offersRouter);
-  app.use('/api/payments', paymentRoutes);
-  app.use('/api/invoices', invoicesRouter);
-  app.use('/api/admin', adminRoutes);
-  app.use('/api/seo', seoRoutes);
-  app.use('/api/notifications', notifRoutes);
-  app.use('/api/gemini', geminiRoutes);
-
-  app.get('/api/health', (req, res) => {
-    res.json({
-      status: 'online',
-      platform: 'CrownDesk Dental CAD SaaS',
-      version: '1.0.0',
-      timestamp: new Date().toISOString()
-    });
-  });
 
   // Safe JSON 404 for any unmatched /api routes (prevents serving HTML to API requests)
   app.all('/api/*', (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
   });
 
-  // Vite middleware for development
+  // Dynamic Case SEO Interceptor for Case URLs & Tracking Pages
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: 'spa'
+      appType: 'spa',
     });
+
+    // Development Case SEO Middleware
+    app.use(async (req, res, next) => {
+      // Check if this is a page request that targets a case
+      if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+        const isHandled = await tryServeCaseSeoHtml(req, res, async () => {
+          const templatePath = path.resolve(process.cwd(), 'index.html');
+          const template = fs.readFileSync(templatePath, 'utf-8');
+          return await vite.transformIndexHtml(req.originalUrl, template);
+        });
+        if (isHandled) return;
+      }
+      next();
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+
+    app.get('*', async (req, res) => {
+      const isHandled = await tryServeCaseSeoHtml(req, res, () => {
+        return fs.readFileSync(path.join(distPath, 'index.html'), 'utf-8');
+      });
+
+      if (!isHandled) {
+        res.sendFile(path.join(distPath, 'index.html'));
+      }
     });
   }
 

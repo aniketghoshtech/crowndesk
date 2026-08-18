@@ -5,13 +5,29 @@ import fs from 'fs';
 import { db } from '../db/store';
 import { getAuthenticatedUser } from './auth';
 import { CaseFile } from '../models/types';
+import { uploadToSupabaseStorage, downloadFromSupabaseStorage } from '../services/supabase';
 
 const router = express.Router();
 
-const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const ROOT_UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+const TMP_UPLOADS_DIR = path.join('/tmp', 'uploads');
+
+let UPLOADS_DIR = ROOT_UPLOADS_DIR;
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch {
+  UPLOADS_DIR = TMP_UPLOADS_DIR;
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not initialize uploads directory:', err);
+  }
 }
+
 
 // Multer disk storage setup
 const storage = multer.diskStorage({
@@ -121,6 +137,12 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
       result: 'SUCCESS'
     });
 
+    // Sync to Supabase Storage if configured
+    const storagePath = `cases/${caseId || 'temp'}/${req.file.filename}`;
+    const fileBuffer = fs.readFileSync(req.file.path);
+    uploadToSupabaseStorage(storagePath, fileBuffer, req.file.mimetype || 'application/octet-stream')
+      .catch((err) => console.warn('Supabase storage background sync note:', err));
+
     res.status(201).json({
       message: 'File uploaded successfully.',
       file: caseFile
@@ -131,7 +153,7 @@ router.post('/upload', upload.single('file'), (req: Request, res: Response): voi
 });
 
 // 2. GET /api/files/download/:fileId - Protected Download with Strict Payment & Role Rules
-router.get('/download/:fileId', (req: Request, res: Response): void => {
+router.get('/download/:fileId', async (req: Request, res: Response): Promise<void> => {
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
@@ -209,10 +231,23 @@ router.get('/download/:fileId', (req: Request, res: Response): void => {
       result: 'SUCCESS'
     });
 
-    // Check if physical file exists on disk
-    const diskPath = path.join(UPLOADS_DIR, targetFile.fileName);
+    // Check if physical file exists on disk (checking root and temp uploads)
+    const diskPath = fs.existsSync(path.join(ROOT_UPLOADS_DIR, targetFile.fileName))
+      ? path.join(ROOT_UPLOADS_DIR, targetFile.fileName)
+      : path.join(TMP_UPLOADS_DIR, targetFile.fileName);
+
     if (fs.existsSync(diskPath)) {
       res.download(diskPath, targetFile.originalName);
+      return;
+    }
+
+    // Check if stored in Supabase Storage
+    const storagePath = targetFile.storageKey || `cases/${targetCase.id}/${targetFile.fileName}`;
+    const supabaseResult = await downloadFromSupabaseStorage(storagePath);
+    if (supabaseResult.data) {
+      res.setHeader('Content-Type', targetFile.fileType === 'FINAL_STL' ? 'application/sla' : 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${targetFile.originalName}"`);
+      res.send(supabaseResult.data);
       return;
     }
 

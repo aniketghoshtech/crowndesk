@@ -6,11 +6,12 @@ import { Mail, Lock, User, Phone, Building, Sparkles, ArrowRight, ShieldCheck, C
 
 interface AuthPageProps {
   onNavigate: (view: string, data?: any) => void;
+  initialMode?: 'login' | 'register';
 }
 
-export const AuthPage: React.FC<AuthPageProps> = ({ onNavigate }) => {
+export const AuthPage: React.FC<AuthPageProps> = ({ onNavigate, initialMode = 'login' }) => {
   const { login, register, loginWithGoogle } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(initialMode === 'login');
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
