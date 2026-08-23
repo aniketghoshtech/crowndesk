@@ -54,8 +54,8 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
   const [turnaroundType, setTurnaroundType] = useState<'STANDARD_24H' | 'EXPRESS_12H' | 'RUSH_6H'>('STANDARD_24H');
   const [specialInstructions, setSpecialInstructions] = useState('');
 
-  // Selected Teeth
-  const [selectedTeeth, setSelectedTeeth] = useState<string[]>(['14', '15']);
+  // ✅ Selected Teeth ডিফল্টভাবে খালি রাখা হয়েছে (আগে ['14', '15'] ছিল)
+  const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
 
   // Files
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
@@ -87,7 +87,11 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
   // Update live pricing estimate
   useEffect(() => {
     if (!selectedServiceId) return;
-    const units = Math.max(1, selectedTeeth.length);
+    const units = selectedTeeth.length;
+    if (units === 0) {
+      setPricingCalc(null);
+      return;
+    }
     const fetchCalc = async () => {
       try {
         const res = await api.calculatePrice(selectedServiceId, units, couponCode);
