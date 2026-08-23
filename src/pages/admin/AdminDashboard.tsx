@@ -68,7 +68,8 @@ import {
   UserPlus,
   FolderPlus,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Boxes
 } from 'lucide-react';
 import { AdminCaseModal } from './AdminCaseModal';
 import { AdminCustomerModal } from './AdminCustomerModal';
@@ -143,6 +144,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
   const [caseStatusFilter, setCaseStatusFilter] = useState('ALL');
   const [customerSearch, setCustomerSearch] = useState('');
   const [auditSearch, setAuditSearch] = useState('');
+  const [designerStatusFilter, setDesignerStatusFilter] = useState<'ALL' | 'ACTIVE' | 'OFFLINE'>('ALL');
 
   // Modals & Action States
   const [assignModal, setAssignModal] = useState<{ open: boolean; caseId: string }>({ open: false, caseId: '' });
@@ -231,7 +233,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         api.getAdminAnalytics().catch(() => null),
         api.getCases().catch(() => ({ cases: [] })),
         api.getAdminCustomers().catch(() => ({ customers: [] })),
-        api.getAdminUsers().catch(() => ({ users: [] })),
+        api.getAdminUsers().catch(() => ({ users: [], employees: [] })),
         api.getServices().catch(() => ({ services: [] })),
         api.getOffers(true).catch(() => ({ offers: [] })),
         api.getInvoices().catch(() => ({ invoices: [] })),
@@ -246,7 +248,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       if (anRes) setAnalytics(anRes);
       if (csRes?.cases) setCases(csRes.cases);
       if (custRes?.customers) setCustomers(custRes.customers);
-      if (empRes?.users) setEmployees(empRes.users);
+      
+      const userList = (empRes as any)?.employees || (empRes as any)?.users || [];
+      setEmployees(userList);
+
       if (srvRes?.services) setServices(srvRes.services);
       if (offRes?.offers) setOffers(offRes.offers);
       if (invRes?.invoices) setInvoices(invRes.invoices);
@@ -280,7 +285,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     fetchAllData();
   }, []);
 
-  const designers = employees.filter(e => e.role === 'DESIGNER_EMPLOYEE');
+  // Designers filter (All CAD Specialist roles)
+  const designers = employees.filter(e => 
+    e.role === 'DESIGNER_EMPLOYEE' || 
+    (e.role as any) === 'DESIGNER' || 
+    (e.role as any) === 'CAD_DESIGNER'
+  );
+
+  // Filtered designers by Active/Offline status
+  const filteredDesigners = designers.filter(d => {
+    if (designerStatusFilter === 'ACTIVE') return d.isActive !== false;
+    if (designerStatusFilter === 'OFFLINE') return d.isActive === false;
+    return true;
+  });
 
   // Case Assignment
   const handleAssignSubmit = async (e: React.FormEvent) => {
@@ -647,7 +664,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       {/* 1. DASHBOARD TAB */}
       {/* ========================================================================= */}
       {activeTab === 'DASHBOARD' && (() => {
-        // Calculate all 10 KPIs with real-time fallbacks
         const kpiTotalCases = analytics?.kpis?.totalCases ?? cases.length;
         const kpiNewCases = analytics?.kpis?.newCases ?? cases.filter(c => c.status === 'NEW').length;
         const kpiActiveCases = analytics?.kpis?.activeCases ?? cases.filter(c => ['RECEIVED', 'ASSIGNED', 'IN_DESIGN', 'QC', 'APPROVAL', 'REVISION'].includes(c.status)).length;
@@ -943,7 +959,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
 
             {/* Operational Overview & Quick Dispatch Controls */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Quick Actions & Department Status */}
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
                 <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-purple-400" />
@@ -1412,41 +1427,110 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 5. DESIGNERS TAB */}
+      {/* 5. DESIGNERS TAB (Enhanced: All, Active Online, and Offline Filters) */}
       {/* ========================================================================= */}
       {activeTab === 'DESIGNERS' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
+          {/* Header with Stats & Filter Tabs */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
-              <h2 className="text-lg font-bold text-slate-100">CAD Design Specialists & Workload Tracker</h2>
-              <p className="text-xs text-slate-400">Active design allocations, turnaround times, and anatomical specializations</p>
+              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <Boxes className="w-5 h-5 text-purple-400" />
+                <span>CAD Design Specialists & Workload Tracker</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Total Designers: <strong className="text-slate-200 font-mono">{designers.length}</strong> | 
+                Active Online: <strong className="text-emerald-400 font-mono">{designers.filter(d => d.isActive !== false).length}</strong> | 
+                Offline: <strong className="text-slate-400 font-mono">{designers.filter(d => d.isActive === false).length}</strong>
+              </p>
             </div>
-            <button
-              onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
-              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>+ Add CAD Designer</span>
-            </button>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Status Filter Tabs: ALL, ACTIVE, OFFLINE */}
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setDesignerStatusFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    designerStatusFilter === 'ALL'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  All ({designers.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesignerStatusFilter('ACTIVE')}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    designerStatusFilter === 'ACTIVE'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Active ({designers.filter(d => d.isActive !== false).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDesignerStatusFilter('OFFLINE')}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    designerStatusFilter === 'OFFLINE'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Offline ({designers.filter(d => d.isActive === false).length})
+                </button>
+              </div>
+
+              <button
+                onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
+                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>+ Add CAD Designer</span>
+              </button>
+            </div>
           </div>
 
+          {/* Designer Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {designers.map(d => {
+            {filteredDesigners.map(d => {
+              const isOnline = d.isActive !== false;
               const activeCount = cases.filter(c => c.assignedDesignerId === d.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
               const completedCount = cases.filter(c => c.assignedDesignerId === d.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
+
               return (
-                <div key={d.id} className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
+                <div 
+                  key={d.id} 
+                  className={`p-5 rounded-2xl border transition space-y-3 flex flex-col justify-between ${
+                    isOnline 
+                      ? 'bg-slate-950 border-slate-800 hover:border-slate-700' 
+                      : 'bg-slate-950/50 border-slate-800/60 opacity-80'
+                  }`}
+                >
                   <div className="space-y-3">
-                    <div className="flex justify-between items-start">
+                    {/* Header: Name, Email & Status Badge */}
+                    <div className="flex justify-between items-start gap-2">
                       <div>
                         <div className="font-bold text-slate-100 text-sm">{d.name}</div>
-                        <div className="text-[11px] text-purple-400">{d.email}</div>
+                        <div className="text-[11px] text-purple-400 font-mono">{d.email}</div>
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        d.isActive !== false ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
-                      }`}>
-                        {d.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
-                      </span>
+                      
+                      {/* Interactive Active / Offline Toggle Badge */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEmployeeStatus(d)}
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition flex items-center gap-1 ${
+                          isOnline
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                        }`}
+                        title="Click to toggle Active (Online) / Offline"
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                        <span>{isOnline ? 'ACTIVE' : 'OFFLINE'}</span>
+                      </button>
                     </div>
 
                     <div className="text-[11px] text-slate-400">
@@ -1454,6 +1538,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                       {d.specialization || 'Full Contour Zirconia & Implants'}
                     </div>
 
+                    {/* Workload Stats */}
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-center">
                       <div className="p-2 bg-slate-900 rounded-xl">
                         <div className="text-[10px] text-slate-400 uppercase font-bold">In Design</div>
@@ -1466,6 +1551,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                     </div>
                   </div>
 
+                  {/* Card Action Controls */}
                   <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-800/80">
                     <button
                       onClick={async () => {
@@ -1505,7 +1591,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 6. PRICING & SERVICES TAB (All Services, Add Service, Edit Service, Offers, Tax Settings, History) */}
+      {/* 6. PRICING & SERVICES TAB */}
       {/* ========================================================================= */}
       {(activeTab === 'PRICING_SERVICES' || activeTab === 'SERVICES' || activeTab === 'PRICING' || activeTab === 'OFFERS') && (
         <AdminPricingManagement
@@ -1520,7 +1606,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 9. PAYMENTS TAB */}
+      {/* 7. PAYMENTS TAB */}
       {/* ========================================================================= */}
       {activeTab === 'PAYMENTS' && (
         <div className="space-y-6">
@@ -1529,7 +1615,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 10. INVOICES TAB */}
+      {/* 8. INVOICES TAB */}
       {/* ========================================================================= */}
       {activeTab === 'INVOICES' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -1586,7 +1672,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 11. FILES TAB */}
+      {/* 9. FILES TAB */}
       {/* ========================================================================= */}
       {activeTab === 'FILES' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -1633,7 +1719,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 12. NOTIFICATIONS TAB */}
+      {/* 10. NOTIFICATIONS TAB */}
       {/* ========================================================================= */}
       {activeTab === 'NOTIFICATIONS' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -1669,7 +1755,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 13. REPORTS TAB */}
+      {/* 11. REPORTS TAB */}
       {/* ========================================================================= */}
       {activeTab === 'REPORTS' && (
         <div className="space-y-6">
@@ -1717,7 +1803,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 14. SEO TAB */}
+      {/* 12. SEO TAB */}
       {/* ========================================================================= */}
       {activeTab === 'SEO' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5 text-xs text-slate-100">
@@ -1797,7 +1883,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 15. STORAGE TAB */}
+      {/* 13. STORAGE TAB */}
       {/* ========================================================================= */}
       {activeTab === 'STORAGE' && (
         <div className="space-y-6">
@@ -1806,7 +1892,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 16. SETTINGS TAB */}
+      {/* 14. SETTINGS TAB */}
       {/* ========================================================================= */}
       {activeTab === 'SETTINGS' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 text-xs text-slate-100">
@@ -1985,7 +2071,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 17. AUDIT LOGS TAB */}
+      {/* 15. AUDIT LOGS TAB */}
       {/* ========================================================================= */}
       {activeTab === 'AUDIT_LOGS' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
@@ -2055,7 +2141,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                 >
                   {designers.map(d => (
                     <option key={d.id} value={d.id}>
-                      {d.name} ({d.email})
+                      {d.name} ({d.email}) {d.isActive === false ? '[OFFLINE]' : ''}
                     </option>
                   ))}
                 </select>
