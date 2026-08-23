@@ -15,8 +15,10 @@ export const pricingRouter = express.Router();
 // GET /api/services
 function handleGetServices(req: Request, res: Response): void {
   try {
-    const services = db.getAllServices();
-    res.json({ services });
+    const services = typeof db.getAllServices === 'function' 
+      ? db.getAllServices() 
+      : ((db.getRawData && db.getRawData().services) || []);
+    res.json({ services: services || [] });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch services.' });
   }
@@ -72,9 +74,9 @@ function handleCreateService(req: Request, res: Response): void {
       unitType: unitType || 'Per Tooth',
       currency: currency || 'INR',
       unitPriceINR: inrVal,
-      unitPriceUSD: unitPriceUSD ? Number(unitPriceUSD) : Math.round(inrVal / 83 * 10) / 10,
-      unitPriceEUR: unitPriceEUR ? Number(unitPriceEUR) : Math.round(inrVal / 90 * 10) / 10,
-      unitPriceGBP: unitPriceGBP ? Number(unitPriceGBP) : Math.round(inrVal / 105 * 10) / 10,
+      unitPriceUSD: unitPriceUSD ? Number(unitPriceUSD) : Math.round((inrVal / 83) * 10) / 10,
+      unitPriceEUR: unitPriceEUR ? Number(unitPriceEUR) : Math.round((inrVal / 90) * 10) / 10,
+      unitPriceGBP: unitPriceGBP ? Number(unitPriceGBP) : Math.round((inrVal / 105) * 10) / 10,
       taxPercent: Number(taxPercent) || 18,
       discountPercent: 0,
       materials: Array.isArray(materials) && materials.length > 0 ? materials : ['Zirconia Multi-Layer', 'Lithium Disilicate (E-Max)'],
@@ -87,11 +89,19 @@ function handleCreateService(req: Request, res: Response): void {
       updatedAt: new Date().toISOString()
     };
 
-    db.addService(newService, {
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role
-    });
+    db.addService(newService);
+
+    // Track pricing history
+    if (typeof (db as any).addPricingHistory === 'function') {
+      (db as any).addPricingHistory({
+        serviceId: newService.id,
+        serviceName: newService.name,
+        previousPriceINR: inrVal,
+        newPriceINR: inrVal,
+        changedBy: user.name,
+        reason: 'Initial service creation'
+      });
+    }
 
     res.status(201).json({ message: 'Service added successfully.', service: newService });
   } catch (err: any) {
@@ -109,6 +119,12 @@ function handleUpdateService(req: Request, res: Response): void {
     }
 
     const { changeReason, ...updates } = req.body;
+    const existing = db.findServiceById(req.params.id);
+
+    if (!existing) {
+      res.status(404).json({ error: 'Service not found.' });
+      return;
+    }
 
     if (updates.unitPriceINR !== undefined) updates.unitPriceINR = Number(updates.unitPriceINR);
     if (updates.unitPriceUSD !== undefined) updates.unitPriceUSD = Number(updates.unitPriceUSD);
@@ -117,17 +133,21 @@ function handleUpdateService(req: Request, res: Response): void {
     if (updates.taxPercent !== undefined) updates.taxPercent = Number(updates.taxPercent);
     if (updates.standardTurnaroundHours !== undefined) updates.standardTurnaroundHours = Number(updates.standardTurnaroundHours);
 
-    const updated = db.updateService(req.params.id, updates, {
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      reason: changeReason
-    });
-
-    if (!updated) {
-      res.status(404).json({ error: 'Service not found.' });
-      return;
+    // Record price change history if price updated
+    if (updates.unitPriceINR !== undefined && updates.unitPriceINR !== existing.unitPriceINR) {
+      if (typeof (db as any).addPricingHistory === 'function') {
+        (db as any).addPricingHistory({
+          serviceId: existing.id,
+          serviceName: existing.name,
+          previousPriceINR: existing.unitPriceINR,
+          newPriceINR: updates.unitPriceINR,
+          changedBy: user.name,
+          reason: changeReason || 'Price updated by administrator'
+        });
+      }
     }
+
+    const updated = db.updateService(existing.id, updates);
 
     res.json({ message: 'Service updated successfully.', service: updated });
   } catch (err: any) {
@@ -144,20 +164,18 @@ function handleToggleService(req: Request, res: Response): void {
       return;
     }
 
-    const toggled = db.toggleServiceActive(req.params.id, {
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role
-    });
-
-    if (!toggled) {
+    const service = db.findServiceById(req.params.id);
+    if (!service) {
       res.status(404).json({ error: 'Service not found.' });
       return;
     }
 
+    const newStatus = !(service.active ?? service.isActive ?? true);
+    const updated = db.updateService(service.id, { active: newStatus, isActive: newStatus });
+
     res.json({
-      message: `Service "${toggled.name}" is now ${toggled.active ? 'Active' : 'Disabled'}.`,
-      service: toggled
+      message: `Service "${service.name}" is now ${newStatus ? 'Active' : 'Disabled'}.`,
+      service: updated
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to toggle service.' });
@@ -173,26 +191,26 @@ function handleDeleteService(req: Request, res: Response): void {
       return;
     }
 
-    const result = db.deleteService(req.params.id, {
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role
-    });
-
-    if (!result.success) {
-      res.status(404).json({ error: result.reason || 'Service not found.' });
+    const service = db.findServiceById(req.params.id);
+    if (!service) {
+      res.status(404).json({ error: 'Service not found.' });
       return;
     }
 
-    if (result.reason === 'SERVICE_ARCHIVED_DUE_TO_CASES') {
+    const cases = typeof db.getAllCases === 'function' ? db.getAllCases() : [];
+    const inUseCount = cases.filter(c => c.serviceId === service.id || c.serviceCode === service.code).length;
+
+    if (inUseCount > 0) {
+      db.updateService(service.id, { active: false, isActive: false });
       res.json({
-        message: `Service has ${result.inUseCount} case(s) on record. It has been disabled/archived to maintain historical case pricing snapshots.`,
+        message: `Service has ${inUseCount} case(s) on record. It has been disabled/archived to maintain historical case pricing snapshots.`,
         archived: true,
-        inUseCount: result.inUseCount
+        inUseCount
       });
       return;
     }
 
+    db.deleteService(service.id);
     res.json({ message: 'Service deleted permanently from database.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete service.' });
@@ -213,8 +231,10 @@ servicesRouter.delete('/:id', handleDeleteService);
 function handleGetOffers(req: Request, res: Response): void {
   try {
     const includeInactive = req.query.includeInactive === 'true';
-    const offers = db.getAllOffers(includeInactive);
-    res.json({ offers });
+    const offers = typeof db.getAllOffers === 'function'
+      ? db.getAllOffers(includeInactive)
+      : ((db.getRawData && db.getRawData().offers) || []);
+    res.json({ offers: offers || [] });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to fetch offers.' });
   }
@@ -359,23 +379,26 @@ function handleToggleOffer(req: Request, res: Response): void {
     }
 
     const { id } = req.params;
-    const toggled = db.toggleOfferActive(id);
-    if (!toggled) {
+    const offer = db.findOfferById(id);
+    if (!offer) {
       res.status(404).json({ error: 'Offer not found.' });
       return;
     }
+
+    const newActive = !offer.active;
+    const toggled = db.updateOffer(id, { active: newActive });
 
     db.logAudit({
       userId: user.id,
       userName: user.name,
       userRole: user.role,
       action: 'OFFER_STATUS_TOGGLED',
-      details: `Toggled status of offer ${toggled.code} to ${toggled.active ? 'ACTIVE' : 'INACTIVE'}`,
+      details: `Toggled status of offer ${offer.code} to ${newActive ? 'ACTIVE' : 'INACTIVE'}`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
 
-    res.json({ message: `Offer ${toggled.code} is now ${toggled.active ? 'Active' : 'Inactive'}.`, offer: toggled });
+    res.json({ message: `Offer ${offer.code} is now ${newActive ? 'Active' : 'Inactive'}.`, offer: toggled });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to toggle offer status.' });
   }
@@ -478,12 +501,22 @@ pricingRouter.get('/history', (req: Request, res: Response): void => {
     }
 
     const { serviceId } = req.query;
-    let history = db.getAllPricingHistory();
-    if (serviceId && typeof serviceId === 'string') {
-      history = history.filter(h => h.serviceId === serviceId || h.serviceCode.toUpperCase() === serviceId.toUpperCase());
+    let history: any[] = [];
+    if (typeof (db as any).getAllPricingHistory === 'function') {
+      history = (db as any).getAllPricingHistory();
+    } else if (typeof (db as any).getRawData === 'function') {
+      history = (db as any).getRawData()?.pricingHistory || [];
     }
 
-    res.json({ history });
+    if (serviceId && typeof serviceId === 'string') {
+      const sId = serviceId.toUpperCase().trim();
+      history = history.filter((h: any) => 
+        (h.serviceId && h.serviceId.toUpperCase() === sId) ||
+        (h.serviceCode && h.serviceCode.toUpperCase() === sId)
+      );
+    }
+
+    res.json({ history: history || [] });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch pricing history.' });
   }

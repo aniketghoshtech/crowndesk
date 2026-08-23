@@ -415,7 +415,6 @@ function getDefaultSeed(): DatabaseSchema {
     pages: {}
   };
 
-  // ✅ Updated Default Merchant UPI Settings to 9058322251@kotakbank
   const paymentSettings: FullPaymentSettings = {
     providers: {
       upi: {
@@ -534,6 +533,8 @@ class DatabaseStore {
         return {
           ...seed,
           ...parsed,
+          pricingHistory: parsed.pricingHistory || seed.pricingHistory || [],
+          offers: parsed.offers || seed.offers || [],
           paymentSettings: {
             ...seed.paymentSettings,
             ...(parsed.paymentSettings || {}),
@@ -642,6 +643,7 @@ class DatabaseStore {
     return newNotif;
   }
 
+  // Users
   public findUserByEmail(email: string): User | undefined {
     return this.data.users.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
   }
@@ -676,6 +678,7 @@ class DatabaseStore {
     return true;
   }
 
+  // Cases
   public getAllCases(): CaseRecord[] {
     return this.data.cases;
   }
@@ -723,6 +726,7 @@ class DatabaseStore {
     return true;
   }
 
+  // Services
   public getAllServices(): ServicePricing[] {
     return this.data.services;
   }
@@ -755,6 +759,15 @@ class DatabaseStore {
     return srv;
   }
 
+  public deleteService(id: string): boolean {
+    const index = this.data.services.findIndex(s => s.id === id || s.code.toUpperCase() === id.toUpperCase());
+    if (index === -1) return false;
+    this.data.services.splice(index, 1);
+    this.save();
+    return true;
+  }
+
+  // Offers
   public getAllOffers(includeInactive: boolean = true): Offer[] {
     if (includeInactive) return this.data.offers || [];
     return (this.data.offers || []).filter(o => o.active);
@@ -772,6 +785,56 @@ class DatabaseStore {
     });
   }
 
+  public addOffer(offer: Offer): Offer {
+    if (!this.data.offers) this.data.offers = [];
+    this.data.offers.unshift(offer);
+    this.save();
+    return offer;
+  }
+
+  public updateOffer(id: string, updates: Partial<Offer>): Offer | undefined {
+    if (!this.data.offers) this.data.offers = [];
+    const off = this.data.offers.find(o => o.id === id);
+    if (!off) return undefined;
+    Object.assign(off, updates);
+    this.save();
+    return off;
+  }
+
+  public deleteOffer(id: string): boolean {
+    if (!this.data.offers) return false;
+    const index = this.data.offers.findIndex(o => o.id === id);
+    if (index === -1) return false;
+    this.data.offers.splice(index, 1);
+    this.save();
+    return true;
+  }
+
+  // Pricing History (Fixed: Added getAllPricingHistory and addPricingHistory)
+  public getAllPricingHistory(): PricingHistoryEntry[] {
+    return this.data.pricingHistory || [];
+  }
+
+  public addPricingHistory(entry: Partial<PricingHistoryEntry> & { serviceId: string; newPriceINR: number }): PricingHistoryEntry {
+    if (!this.data.pricingHistory) {
+      this.data.pricingHistory = [];
+    }
+    const newEntry: PricingHistoryEntry = {
+      id: entry.id || `prc-hist-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      serviceId: entry.serviceId,
+      serviceName: entry.serviceName || 'Dental CAD Service',
+      previousPriceINR: entry.previousPriceINR ?? entry.newPriceINR,
+      newPriceINR: entry.newPriceINR,
+      changedBy: entry.changedBy || 'Admin',
+      reason: entry.reason || 'Price adjustment',
+      timestamp: entry.timestamp || new Date().toISOString()
+    };
+    this.data.pricingHistory.unshift(newEntry);
+    this.save();
+    return newEntry;
+  }
+
+  // Invoices
   public getAllInvoices(): InvoiceRecord[] {
     return this.data.invoices;
   }
@@ -786,6 +849,7 @@ class DatabaseStore {
     return inv;
   }
 
+  // Payments
   public getAllPayments(): PaymentRecord[] {
     return this.data.payments;
   }
@@ -808,6 +872,7 @@ class DatabaseStore {
     return pay;
   }
 
+  // Payment Settings
   public getRawPaymentSettings(): FullPaymentSettings {
     return this.data.paymentSettings;
   }
@@ -854,6 +919,7 @@ class DatabaseStore {
     return this.getMaskedPaymentSettings();
   }
 
+  // Tax Settings
   public getTaxSettings(): TaxSettings {
     if (!this.data.taxSettings) {
       const pol = this.data.paymentSettings?.policy;
@@ -881,6 +947,7 @@ class DatabaseStore {
     return current;
   }
 
+  // SEO
   public getSEO(): GlobalSEOSettings {
     return this.data.seo;
   }
@@ -898,6 +965,7 @@ class DatabaseStore {
     return this.data.seo;
   }
 
+  // Storage
   public getStorageConfig(): StorageConfig {
     return this.data.storageConfig;
   }
@@ -927,6 +995,7 @@ class DatabaseStore {
     return this.data.storageConfig;
   }
 
+  // SMTP
   public getSMTPConfig(): SMTPConfig {
     return this.data.smtpConfig;
   }
@@ -937,6 +1006,7 @@ class DatabaseStore {
     return this.data.smtpConfig;
   }
 
+  // OTP
   public setOTP(email: string, otp: string, ttlSeconds = 600) {
     this.data.otpStore[email.toLowerCase()] = {
       otp,
