@@ -89,9 +89,9 @@ function handleGetUpiConfig(req: Request, res: Response): void {
       name: 'CrownDesk UPI Payment',
       enabled: true,
       businessName: 'CrownDesk Dental Technologies',
-      upiId: '9058322251@paytm',
+      upiId: '9058322251@kotakbank',
       upiDisplayName: 'CrownDesk Digital Dental Lab (Anurag Nishad)',
-      upiQrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental%20CAD&cu=INR',
+      upiQrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@kotakbank&pn=CrownDesk%20Dental%20CAD&cu=INR',
       currency: 'INR',
       upiInstructions: 'Scan with Google Pay, PhonePe, Paytm, BHIM, Cred, or Amazon Pay. Enter the 12-digit UPI UTR / Reference ID and upload payment screenshot for reconciliation.',
       verificationMode: 'MANUAL_ADMIN'
@@ -105,9 +105,9 @@ function handleGetUpiConfig(req: Request, res: Response): void {
           name: upi.name,
           enabled: upi.enabled,
           businessName: upi.businessName || 'CrownDesk Dental Technologies',
-          upiId: upi.upiId || '9058322251@paytm',
+          upiId: upi.upiId || '9058322251@kotakbank',
           upiDisplayName: upi.upiDisplayName || 'CrownDesk Digital Dental Lab (Anurag Nishad)',
-          upiQrImageUrl: upi.upiQrImageUrl || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=${encodeURIComponent(upi.upiId || '9058322251@paytm')}&pn=CrownDesk%20Dental%20CAD&cu=INR`,
+          upiQrImageUrl: upi.upiQrImageUrl || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(upi.upiId || '9058322251@kotakbank')}&pn=CrownDesk%20Dental%20CAD&cu=INR`,
           currency: upi.currency || 'INR',
           upiInstructions: upi.upiInstructions || 'Scan with any UPI app (GPay, PhonePe, Paytm, BHIM). Enter the 12-digit UPI Reference ID (UTR) and submit.',
           verificationMode: upi.verificationMode || 'MANUAL_ADMIN'

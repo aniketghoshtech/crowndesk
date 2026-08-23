@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CaseRecord } from '../../types';
 import {
   X,
+  ArrowLeft,
   CheckCircle2,
   ShieldCheck,
   QrCode,
@@ -9,7 +10,6 @@ import {
   Check,
   Upload,
   AlertCircle,
-  ExternalLink,
   Sparkles,
   Smartphone,
   FileCheck
@@ -27,9 +27,10 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
   onClose,
   onPaymentSuccess
 }) => {
-  const [upiId, setUpiId] = useState('9058322251@paytm');
+  // Updated UPI ID to Kotak Mahindra Bank
+  const [upiId, setUpiId] = useState('9058322251@kotakbank');
   const [businessName, setBusinessName] = useState('CrownDesk Dental Technologies');
-  const [upiDisplayName, setUpiDisplayName] = useState('CrownDesk Digital Dental Lab');
+  const [upiDisplayName, setUpiDisplayName] = useState('CrownDesk Digital Dental Lab (Anurag Nishad)');
   const [qrUrl, setQrUrl] = useState('');
   const [instructions, setInstructions] = useState('');
 
@@ -46,6 +47,23 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
     isInstant: false
   });
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // Decimal formatting helper
+  const formatINR = (val: number | string | undefined) => {
+    const num = Number(val || 0);
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+  };
+
+  const finalAmount = formatINR(caseRecord.finalTotalAmount);
+
   // Fetch Public UPI Config
   useEffect(() => {
     async function loadUpiConfig() {
@@ -58,20 +76,20 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
           if (u.upiDisplayName) setUpiDisplayName(u.upiDisplayName);
           if (u.upiInstructions) setInstructions(u.upiInstructions);
 
-          const upiString = `upi://pay?pa=${encodeURIComponent(u.upiId || '9058322251@paytm')}&pn=${encodeURIComponent(u.businessName || 'CrownDesk')}&am=${caseRecord.finalTotalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
+          const upiString = `upi://pay?pa=${encodeURIComponent(u.upiId || '9058322251@kotakbank')}&pn=${encodeURIComponent(u.businessName || 'CrownDesk')}&am=${finalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
           const qr = u.upiQrImageUrl || `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(upiString)}`;
           setQrUrl(qr);
         } else {
-          const upiString = `upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental&am=${caseRecord.finalTotalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
+          const upiString = `upi://pay?pa=9058322251@kotakbank&pn=CrownDesk%20Dental&am=${finalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
           setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(upiString)}`);
         }
       } catch (err) {
-        const upiString = `upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental&am=${caseRecord.finalTotalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
+        const upiString = `upi://pay?pa=9058322251@kotakbank&pn=CrownDesk%20Dental&am=${finalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
         setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(upiString)}`);
       }
     }
     loadUpiConfig();
-  }, [caseRecord]);
+  }, [caseRecord, finalAmount]);
 
   const handleCopyUpi = () => {
     navigator.clipboard.writeText(upiId);
@@ -96,7 +114,6 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
       } else if (res && res.url) {
         setScreenshotUrl(res.url);
       } else {
-        // Fallback local data url for preview
         const reader = new FileReader();
         reader.onload = () => {
           if (typeof reader.result === 'string') {
@@ -154,17 +171,37 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
     }
   };
 
-  const directUpiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(businessName)}&am=${caseRecord.finalTotalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
+  const directUpiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(businessName)}&am=${finalAmount}&cu=INR&tn=Case-${caseRecord.id}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700/90 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative text-slate-100 my-6">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition"
-        >
-          <X className="w-5 h-5" />
-        </button>
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in overflow-y-auto"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-900 border border-slate-700/90 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative text-slate-100 my-6"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Navigation Header */}
+        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-400 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 transition font-medium"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Dashboard</span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition"
+            title="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
         {success ? (
           <div className="text-center py-8 space-y-4">
@@ -183,8 +220,8 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
           </div>
         ) : (
           <div className="space-y-5">
-            {/* Header */}
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+            {/* Header Info */}
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30 shrink-0">
                 <QrCode className="w-5 h-5" />
               </div>
@@ -199,32 +236,32 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
             {/* Bill Summary */}
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-300">
-                <span>Unit Price ({caseRecord.unitsQuantity} units @ ₹{caseRecord.unitPrice})</span>
-                <span>₹{caseRecord.subtotal}</span>
+                <span>Unit Price ({caseRecord.unitsQuantity} units @ ₹{formatINR(caseRecord.unitPrice)})</span>
+                <span>₹{formatINR(caseRecord.subtotal)}</span>
               </div>
 
               {Number(caseRecord.discountAmount || 0) > 0 && (
                 <div className="flex justify-between text-emerald-400">
                   <span>Volume Discount</span>
-                  <span>- ₹{caseRecord.discountAmount}</span>
+                  <span>- ₹{formatINR(caseRecord.discountAmount)}</span>
                 </div>
               )}
 
               {Number(caseRecord.offerDiscountAmount || 0) > 0 && (
                 <div className="flex justify-between text-emerald-400 font-semibold">
                   <span>Promotional Offer ({caseRecord.offerCodeApplied})</span>
-                  <span>- ₹{caseRecord.offerDiscountAmount}</span>
+                  <span>- ₹{formatINR(caseRecord.offerDiscountAmount)}</span>
                 </div>
               )}
 
               <div className="flex justify-between text-slate-400">
                 <span>GST (18% Dental CAD Services)</span>
-                <span>₹{caseRecord.taxAmount}</span>
+                <span>₹{formatINR(caseRecord.taxAmount)}</span>
               </div>
 
               <div className="border-t border-slate-800 pt-2 flex justify-between text-sm font-bold text-cyan-400">
                 <span>Total Amount Payable</span>
-                <span>₹{caseRecord.finalTotalAmount}</span>
+                <span>₹{finalAmount}</span>
               </div>
             </div>
 
@@ -356,21 +393,32 @@ export const UpiPaymentModal: React.FC<UpiPaymentModalProps> = ({
                 </div>
               )}
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={submitting || !utr.trim()}
-                className="w-full py-3 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-2 text-sm disabled:opacity-50 mt-2"
-              >
-                {submitting ? (
-                  <span>Submitting Payment Proof...</span>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>Confirm UPI Payment of ₹{caseRecord.finalTotalAmount}</span>
-                  </>
-                )}
-              </button>
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-1/3 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl border border-slate-700 transition flex items-center justify-center gap-1.5 text-sm"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Pay Later / Back</span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={submitting || !utr.trim()}
+                  className="w-2/3 py-3 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <span>Submitting Proof...</span>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>Confirm Payment (₹{finalAmount})</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         )}
