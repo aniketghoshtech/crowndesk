@@ -1,0 +1,151 @@
+mutation InsertPatient($data: Patient_Data!) @auth(level: USER) {
+  patient_insert(data: $data)
+}
+
+mutation UpsertPatient($data: Patient_Data!) @auth(level: USER) {
+  patient_upsert(data: $data)
+}
+
+mutation DeletePatient($id: UUID!) @auth(level: USER) {
+  patient_delete(id: $id)
+}
+
+mutation UpdatePatient($id: UUID!, $data: Patient_Data!) @auth(level: USER) {
+  patient_update(id: $id, data: $data)
+}
+
+query GetPatient($id: UUID!) @auth(level: USER) {
+  patient(id: $id) {
+    firstName
+    lastName
+    email
+  }
+}
+
+query ListPatients @auth(level: USER) {
+  patients {
+    firstName
+    lastName
+  }
+}
+
+mutation InsertDentist($data: Dentist_Data!) @auth(level: PUBLIC, insecureReason: "Dentist profiles are public directory information.") {
+  dentist_insert(data: $data)
+}
+
+mutation UpsertDentist($data: Dentist_Data!) @auth(level: PUBLIC, insecureReason: "Dentist profiles are public directory information.") {
+  dentist_upsert(data: $data)
+}
+
+mutation DeleteDentist($id: UUID!) @auth(level: PUBLIC, insecureReason: "Dentist profiles are public directory information.") {
+  dentist_delete(id: $id)
+}
+
+mutation UpdateDentist($id: UUID!, $data: Dentist_Data!) @auth(level: PUBLIC, insecureReason: "Dentist profiles are public directory information.") {
+  dentist_update(id: $id, data: $data)
+}
+
+query GetDentist($id: UUID!) @auth(level: PUBLIC, insecureReason: "Dentist profiles are public directory information.") {
+  dentist(id: $id) {
+    name
+    specialty
+  }
+}
+
+query ListDentists @auth(level: PUBLIC, insecureReason: "Dentist profiles are public directory information.") {
+  dentists {
+    name
+    specialty
+  }
+}
+
+mutation InsertAppointment($data: Appointment_Data!) @auth(level: USER) {
+  appointment_insert(data: $data)
+}
+
+mutation UpsertAppointment($data: Appointment_Data!) @auth(level: USER) {
+  appointment_upsert(data: $data)
+}
+
+mutation DeleteAppointment($id: UUID!) @auth(level: USER) {
+  appointment_delete(id: $id)
+}
+
+mutation UpdateAppointment($id: UUID!, $data: Appointment_Data!) @auth(level: USER) {
+  appointment_update(id: $id, data: $data)
+}
+
+query GetAppointment($id: UUID!) @auth(level: USER) {
+  appointment(id: $id) {
+    startTime
+    endTime
+    status
+  }
+}
+
+query ListAppointments @auth(level: USER) {
+  appointments {
+    startTime
+    status
+  }
+}
+
+mutation InsertTreatmentPlan($data: TreatmentPlan_Data!) @auth(level: USER) {
+  treatmentPlan_insert(data: $data)
+}
+
+mutation UpsertTreatmentPlan($data: TreatmentPlan_Data!) @auth(level: USER) {
+  treatmentPlan_upsert(data: $data)
+}
+
+mutation DeleteTreatmentPlan($id: UUID!) @auth(level: USER) {
+  treatmentPlan_delete(id: $id)
+}
+
+mutation UpdateTreatmentPlan($id: UUID!, $data: TreatmentPlan_Data!) @auth(level: USER) {
+  treatmentPlan_update(id: $id, data: $data)
+}
+
+query GetTreatmentPlan($id: UUID!) @auth(level: USER) {
+  treatmentPlan(id: $id) {
+    diagnosis
+    totalCost
+  }
+}
+
+query ListTreatmentPlans @auth(level: USER) {
+  treatmentPlans {
+    diagnosis
+    totalCost
+  }
+}
+
+mutation InsertProcedure($data: Procedure_Data!) @auth(level: USER) {
+  procedure_insert(data: $data)
+}
+
+mutation UpsertProcedure($data: Procedure_Data!) @auth(level: USER) {
+  procedure_upsert(data: $data)
+}
+
+mutation DeleteProcedure($id: UUID!) @auth(level: USER) {
+  procedure_delete(id: $id)
+}
+
+mutation UpdateProcedure($id: UUID!, $data: Procedure_Data!) @auth(level: USER) {
+  procedure_update(id: $id, data: $data)
+}
+
+query GetProcedure($id: UUID!) @auth(level: USER) {
+  procedure(id: $id) {
+    name
+    cost
+  }
+}
+
+query ListProcedures @auth(level: USER) {
+  procedures {
+    name
+    cost
+  }
+}

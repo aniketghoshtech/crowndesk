@@ -1,0 +1,38 @@
+type Patient @table {
+  firstName: String!
+  lastName: String!
+  email: String!
+  phoneNumber: String!
+  dateOfBirth: Date
+  insuranceProvider: String
+}
+
+type Dentist @table {
+  name: String!
+  specialty: String!
+  licenseNumber: String!
+  profilePictureUrl: String
+}
+
+type Appointment @table {
+  patient: Patient!
+  dentist: Dentist!
+  startTime: Timestamp!
+  endTime: Timestamp!
+  status: String!
+  notes: String
+}
+
+type TreatmentPlan @table {
+  patient: Patient!
+  diagnosis: String!
+  totalCost: Float!
+  createdAt: Timestamp
+}
+
+type Procedure @table {
+  treatmentPlan: TreatmentPlan!
+  name: String!
+  cost: Float!
+  notes: String
+}

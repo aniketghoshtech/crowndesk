@@ -37,7 +37,6 @@ async function handleResponse<T = any>(res: Response, defaultError = 'Request fa
   if (!data) {
     const rawText = await res.text().catch(() => '');
     let cleanText = rawText;
-    // Format if server/hosting returned HTML or edge invocation error
     if (rawText.includes('<html') || rawText.includes('<!DOCTYPE') || rawText.includes('NOT_FOUND')) {
       cleanText = `API endpoint unavailable (${res.status} ${res.statusText || 'Not Found'}).`;
     } else if (rawText.includes('FUNCTION_INVOCATION_FAILED')) {
@@ -239,7 +238,6 @@ export const api = {
     return handleResponse(res, 'Failed to create service');
   },
 
-  // Backward-compatible alias
   async saveService(serviceData: any) {
     return this.createService(serviceData);
   },
@@ -365,7 +363,6 @@ export const api = {
     return handleResponse(res, 'UPI payment submission failed');
   },
 
-  // Backward-compatible alias
   async submitManualPaymentProof(data: { caseId: string; gateway?: string; transactionId: string; notes?: string; proofUrl?: string }) {
     return this.submitUpiPayment({
       caseId: data.caseId,
@@ -471,7 +468,7 @@ export const api = {
     return handleResponse(res, 'Storage connection test failed');
   },
 
-  // Admin Controls
+  // Admin Controls (Employees & Designers)
   async getAdminAnalytics(): Promise<AdminAnalytics> {
     const res = await fetch(`${API_BASE}/admin/analytics`, {
       headers: getAuthHeaders()
@@ -479,11 +476,18 @@ export const api = {
     return handleResponse<AdminAnalytics>(res, 'Failed to fetch analytics');
   },
 
-  async getAdminUsers(): Promise<{ users: User[] }> {
+  // Fixed: Returns both users and employees arrays for 100% dashboard compatibility
+  async getAdminUsers(): Promise<{ users: User[]; employees: User[] }> {
     const res = await fetch(`${API_BASE}/admin/employees`, {
       headers: getAuthHeaders()
     });
-    return handleResponse<{ users: User[] }>(res, 'Failed to fetch employees');
+    const data = await handleResponse<{ users?: User[]; employees?: User[] }>(res, 'Failed to fetch employees');
+    const list = data.employees || data.users || [];
+    return { users: list, employees: list };
+  },
+
+  async getEmployees(): Promise<{ employees: User[]; users: User[] }> {
+    return this.getAdminUsers();
   },
 
   async createAdminUser(data: any) {
@@ -495,6 +499,10 @@ export const api = {
     return handleResponse(res, 'Failed to create user');
   },
 
+  async createEmployee(data: any) {
+    return this.createAdminUser(data);
+  },
+
   async updateAdminUser(userId: string, data: any) {
     const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
       method: 'PUT',
@@ -502,6 +510,10 @@ export const api = {
       body: JSON.stringify(data)
     });
     return handleResponse(res, 'Failed to update employee');
+  },
+
+  async updateEmployee(id: string, data: any) {
+    return this.updateAdminUser(id, data);
   },
 
   async deleteAdminUser(userId: string) {
@@ -512,12 +524,20 @@ export const api = {
     return handleResponse(res, 'Failed to delete employee');
   },
 
+  async deleteEmployee(id: string) {
+    return this.deleteAdminUser(id);
+  },
+
   async toggleAdminUserStatus(userId: string) {
     const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}/toggle-status`, {
       method: 'PATCH',
       headers: getAuthHeaders()
     });
     return handleResponse(res, 'Failed to toggle employee status');
+  },
+
+  async toggleEmployeeStatus(id: string) {
+    return this.toggleAdminUserStatus(id);
   },
 
   async adminResetUserPassword(userId: string, newPassword: string, forceChange = true) {

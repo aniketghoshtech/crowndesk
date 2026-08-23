@@ -32,6 +32,17 @@ export const AdminEmployeeModal: React.FC<AdminEmployeeModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Esc কি প্রেস করলে মোডাল ক্লোজ
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     if (editingEmployee) {
       setFormData({
@@ -63,6 +74,8 @@ export const AdminEmployeeModal: React.FC<AdminEmployeeModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+
     if (!formData.name.trim()) {
       setError('Employee name is required.');
       return;
@@ -74,11 +87,22 @@ export const AdminEmployeeModal: React.FC<AdminEmployeeModalProps> = ({
 
     try {
       setSaving(true);
-      setError('');
-      await onSave(formData);
+
+      // ব্যাকএন্ডের জন্য password এবং clean email নিশ্চিত করে পাঠানো হচ্ছে
+      const payload = {
+        ...formData,
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        phone: formData.phone.trim(),
+        password: formData.initialPassword || 'Designer@123',
+        initialPassword: formData.initialPassword || 'Designer@123'
+      };
+
+      await onSave(payload);
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to save staff account.');
+      console.error('Failed to save staff:', err);
+      setError(err.message || err.error || 'Failed to save staff account. Please check the email or connection.');
     } finally {
       setSaving(false);
     }
@@ -87,8 +111,14 @@ export const AdminEmployeeModal: React.FC<AdminEmployeeModalProps> = ({
   const isDesigner = formData.role === 'DESIGNER_EMPLOYEE';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-xl w-full p-6 text-slate-100 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-slate-900 border border-slate-700 rounded-3xl max-w-xl w-full p-6 text-slate-100 shadow-2xl space-y-5 my-8 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
@@ -110,8 +140,10 @@ export const AdminEmployeeModal: React.FC<AdminEmployeeModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            title="Close"
           >
             <X className="w-5 h-5" />
           </button>

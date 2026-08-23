@@ -1,0 +1,115 @@
+mutation SeedDatabase @transaction @auth(level: USER) {
+  patient_insertMany(
+    data: [
+      {
+        id: "d9e84700-1122-3344-5566-77889900aabb",
+        firstName: "Alice",
+        lastName: "Smith",
+        email: "alice@example.com",
+        phoneNumber: "555-0101"
+      },
+      {
+        id: "d9e84700-1122-3344-5566-77889900aabc",
+        firstName: "Bob",
+        lastName: "Jones",
+        email: "bob@example.com",
+        phoneNumber: "555-0102"
+      },
+      {
+        id: "d9e84700-1122-3344-5566-77889900aabd",
+        firstName: "Charlie",
+        lastName: "Brown",
+        email: "charlie@example.com",
+        phoneNumber: "555-0103"
+      }
+    ]
+  )
+  dentist_insertMany(
+    data: [
+      {
+        id: "e0a0b0c0-1111-2222-3333-444455556666",
+        name: "Dr. Gregory House",
+        specialty: "Endodontics",
+        licenseNumber: "LIC-1001"
+      },
+      {
+        id: "e0a0b0c0-1111-2222-3333-444455556667",
+        name: "Dr. Lisa Cuddy",
+        specialty: "Orthodontics",
+        licenseNumber: "LIC-1002"
+      },
+      {
+        id: "e0a0b0c0-1111-2222-3333-444455556668",
+        name: "Dr. Eric Foreman",
+        specialty: "Periodontics",
+        licenseNumber: "LIC-1003"
+      }
+    ]
+  )
+  appointment_insertMany(
+    data: [
+      {
+        patient: { id: "d9e84700-1122-3344-5566-77889900aabb" },
+        dentist: { id: "e0a0b0c0-1111-2222-3333-444455556666" },
+        startTime: "2023-11-01T09:00:00Z",
+        endTime: "2023-11-01T10:00:00Z",
+        status: "SCHEDULED"
+      },
+      {
+        patient: { id: "d9e84700-1122-3344-5566-77889900aabc" },
+        dentist: { id: "e0a0b0c0-1111-2222-3333-444455556667" },
+        startTime: "2023-11-01T10:30:00Z",
+        endTime: "2023-11-01T11:30:00Z",
+        status: "COMPLETED"
+      },
+      {
+        patient: { id: "d9e84700-1122-3344-5566-77889900aabd" },
+        dentist: { id: "e0a0b0c0-1111-2222-3333-444455556668" },
+        startTime: "2023-11-02T14:00:00Z",
+        endTime: "2023-11-02T15:00:00Z",
+        status: "PENDING"
+      }
+    ]
+  )
+  treatmentPlan_insertMany(
+    data: [
+      {
+        id: "f1a1b1c1-2222-3333-4444-555566667777",
+        patient: { id: "d9e84700-1122-3344-5566-77889900aabb" },
+        diagnosis: "Cavity in lower left molar",
+        totalCost: 250.0
+      },
+      {
+        id: "f1a1b1c1-2222-3333-4444-555566667778",
+        patient: { id: "d9e84700-1122-3344-5566-77889900aabc" },
+        diagnosis: "Gingivitis",
+        totalCost: 150.0
+      },
+      {
+        id: "f1a1b1c1-2222-3333-4444-555566667779",
+        patient: { id: "d9e84700-1122-3344-5566-77889900aabd" },
+        diagnosis: "Root Canal",
+        totalCost: 800.0
+      }
+    ]
+  )
+  procedure_insertMany(
+    data: [
+      {
+        treatmentPlan: { id: "f1a1b1c1-2222-3333-4444-555566667777" },
+        name: "Filling",
+        cost: 250.0
+      },
+      {
+        treatmentPlan: { id: "f1a1b1c1-2222-3333-4444-555566667778" },
+        name: "Deep Cleaning",
+        cost: 150.0
+      },
+      {
+        treatmentPlan: { id: "f1a1b1c1-2222-3333-4444-555566667779" },
+        name: "Root Canal Procedure",
+        cost: 800.0
+      }
+    ]
+  )
+}

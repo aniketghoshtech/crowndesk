@@ -30,7 +30,7 @@ router.get('/analytics', requireAdmin, (req: Request, res: Response): void => {
     const completedCases = cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
     const pendingCases = cases.filter(c => !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
 
-    // Fixed: Account for both PAID and SUCCESS payment records
+    // Total revenue
     const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
     
     // Today's revenue calculation
@@ -127,13 +127,15 @@ router.get('/analytics', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 2. GET /api/admin/employees - List CAD Designers & Employee Stats
+// 2. GET /api/admin/employees - List CAD Designers & Employee Stats (Supports All Staff Roles)
 router.get('/employees', requireAdmin, (req: Request, res: Response): void => {
   try {
     const users = db.getAllUsers();
     const cases = db.getAllCases();
+    
+    // Fixed: All staff roles included
     const employees = users
-      .filter(u => u.role === 'DESIGNER_EMPLOYEE' || u.role === 'ADMIN')
+      .filter(u => u.role === 'DESIGNER_EMPLOYEE' || u.role === 'ADMIN' || u.role === 'STAFF' || u.role === 'QC_INSPECTOR')
       .map(emp => {
         const { passwordHash, ...safe } = emp;
         const activeCases = cases.filter(c => c.assignedDesignerId === emp.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
@@ -155,33 +157,53 @@ router.get('/employees', requireAdmin, (req: Request, res: Response): void => {
 router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const { name, email, phone, specialization, role = 'DESIGNER_EMPLOYEE', initialPassword = 'Designer@123' } = req.body;
+    const { 
+      name, 
+      email, 
+      phone, 
+      specialization, 
+      role = 'DESIGNER_EMPLOYEE', 
+      password, 
+      initialPassword = 'Designer@123',
+      isActive = true
+    } = req.body;
 
-    if (!name || !email) {
-      res.status(400).json({ error: 'Name and email are required.' });
+    if (!name || !name.trim()) {
+      res.status(400).json({ error: 'Full name is required.' });
+      return;
+    }
+
+    if (!email || !email.trim()) {
+      res.status(400).json({ error: 'Email address is required.' });
       return;
     }
 
     const cleanEmail = email.trim().toLowerCase();
     const existing = db.findUserByEmail(cleanEmail);
     if (existing) {
-      res.status(400).json({ error: 'An account with this email already exists.' });
+      res.status(400).json({ error: `An account with email "${cleanEmail}" already exists.` });
       return;
     }
 
-    const assignedRole = role === 'ADMIN' ? 'ADMIN' : (role === 'SUPER_ADMIN' && adminUser.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'DESIGNER_EMPLOYEE');
+    // Role assignment
+    let assignedRole = role;
+    if (role === 'SUPER_ADMIN' && adminUser.role !== 'SUPER_ADMIN') {
+      assignedRole = 'ADMIN';
+    }
+
+    const rawPassword = (password || initialPassword || 'Designer@123').trim();
 
     const newEmp: User = {
       id: `usr-emp-${Date.now()}`,
       name: name.trim(),
       email: cleanEmail,
-      passwordHash: hashPassword(initialPassword),
+      passwordHash: hashPassword(rawPassword),
       role: assignedRole as any,
-      phone: phone || '',
+      phone: (phone || '').trim(),
       clinicOrLabName: 'CrownDesk Digital CAD Division',
-      specialization: specialization || 'Exocad & 3Shape Certified CAD Designer',
+      specialization: specialization || (assignedRole === 'DESIGNER_EMPLOYEE' ? 'Exocad & 3Shape Certified CAD Designer' : 'CrownDesk Operations & Quality Control'),
       country: 'India',
-      isActive: true,
+      isActive: isActive !== false,
       isEmailVerified: true,
       forcePasswordChange: false,
       createdAt: new Date().toISOString(),
@@ -202,7 +224,11 @@ router.post('/employees', requireAdmin, (req: Request, res: Response): void => {
     });
 
     const { passwordHash, ...safe } = newEmp;
-    res.status(201).json({ message: 'Employee created successfully.', employee: safe });
+    res.status(201).json({ 
+      message: 'Employee created successfully.', 
+      employee: safe,
+      user: safe 
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create employee.' });
   }
@@ -218,7 +244,7 @@ router.put('/employees/:id', requireAdmin, (req: Request, res: Response): void =
       return;
     }
 
-    const { name, email, phone, specialization, role, isActive } = req.body;
+    const { name, email, phone, specialization, role, isActive, password } = req.body;
     if (name) emp.name = name.trim();
     if (email && email.toLowerCase() !== emp.email.toLowerCase()) {
       const existing = db.findUserByEmail(email);
@@ -228,12 +254,15 @@ router.put('/employees/:id', requireAdmin, (req: Request, res: Response): void =
       }
       emp.email = email.trim().toLowerCase();
     }
-    if (phone !== undefined) emp.phone = phone;
+    if (phone !== undefined) emp.phone = String(phone).trim();
     if (specialization !== undefined) emp.specialization = specialization;
     if (role && (adminUser.role === 'SUPER_ADMIN' || (role !== 'SUPER_ADMIN'))) {
       emp.role = role;
     }
     if (isActive !== undefined) emp.isActive = Boolean(isActive);
+    if (password && password.trim()) {
+      emp.passwordHash = hashPassword(password.trim());
+    }
     emp.updatedAt = new Date().toISOString();
 
     db.updateUser(emp.id, emp);
@@ -250,7 +279,7 @@ router.put('/employees/:id', requireAdmin, (req: Request, res: Response): void =
     });
 
     const { passwordHash, ...safe } = emp;
-    res.json({ message: 'Employee updated successfully.', employee: safe });
+    res.json({ message: 'Employee updated successfully.', employee: safe, user: safe });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update employee.' });
   }
