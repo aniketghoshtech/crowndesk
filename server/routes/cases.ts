@@ -28,7 +28,7 @@ function sanitizeTimelineForEmployee(timeline: TimelineEvent[]): TimelineEvent[]
 }
 
 // Helper to sanitize case for employee role (strip all financial & private customer contact information)
-function sanitizeCaseForRole(caseRec: CaseRecord, role: UserRole, requestingUserId: string): any {
+function sanitizeCaseForRole(caseRec: CaseRecord, role: UserRole | string, requestingUserId: string): any {
   if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
     return caseRec;
   }
@@ -41,7 +41,7 @@ function sanitizeCaseForRole(caseRec: CaseRecord, role: UserRole, requestingUser
     return caseRec;
   }
 
-  if (role === 'DESIGNER_EMPLOYEE') {
+  if (role === 'DESIGNER_EMPLOYEE' || role === 'DESIGNER' || role === 'QC_INSPECTOR' || role === 'STAFF') {
     // Employees can ONLY see cases explicitly assigned to them
     if (caseRec.assignedDesignerId !== requestingUserId) {
       return null;
@@ -115,9 +115,9 @@ router.get('/', (req: Request, res: Response): void => {
       permittedCases = allCases;
     } else if (user.role === 'DOCTOR_LAB') {
       permittedCases = allCases.filter(c => c.customerId === user.id);
-    } else if (user.role === 'DESIGNER_EMPLOYEE') {
+    } else if (user.role === 'DESIGNER_EMPLOYEE' || (user.role as any) === 'DESIGNER' || (user.role as any) === 'STAFF' || (user.role as any) === 'QC_INSPECTOR') {
       permittedCases = allCases
-        .filter(c => c.assignedDesignerId === user.id)
+        .filter(c => c.assignedDesignerId === user.id || c.assignedDesignerId === user.email)
         .map(c => sanitizeCaseForRole(c, user.role, user.id));
     }
 
@@ -184,7 +184,7 @@ router.get('/:id', (req: Request, res: Response): void => {
   }
 });
 
-// 3. GET /api/cases/search/:caseId - Authenticated Case ID Search (Customer: own cases only, Employee: assigned cases only, Admin: all cases)
+// 3. GET /api/cases/search/:caseId - Authenticated Case ID Search
 router.get('/search/:caseId', (req: Request, res: Response): void => {
   try {
     const rawId = req.params.caseId.trim().toUpperCase();
@@ -199,7 +199,6 @@ router.get('/search/:caseId', (req: Request, res: Response): void => {
     if (user) {
       const sanitized = sanitizeCaseForRole(caseRec, user.role, user.id);
       if (!sanitized) {
-        // Log unauthorized search attempt
         db.logAudit({
           userId: user.id,
           userName: user.name,
@@ -216,7 +215,7 @@ router.get('/search/:caseId', (req: Request, res: Response): void => {
             error: `Access forbidden: Case "${rawId}" belongs to another clinic/doctor. Customer accounts can only search and view their own cases.`,
             role: user.role
           });
-        } else if (user.role === 'DESIGNER_EMPLOYEE') {
+        } else if (user.role === 'DESIGNER_EMPLOYEE' || (user.role as any) === 'DESIGNER') {
           res.status(403).json({
             error: `Access forbidden: Case "${rawId}" is not assigned to you. Employees can only search and view cases assigned to them.`,
             role: user.role
@@ -239,7 +238,7 @@ router.get('/search/:caseId', (req: Request, res: Response): void => {
       return;
     }
 
-    // Public / Unauthenticated Tracker (shows high-level status timeline without revealing patient, doctor, or clinical financial details)
+    // Public / Unauthenticated Tracker
     res.json({
       case: {
         id: caseRec.id,
@@ -342,7 +341,9 @@ router.post('/', (req: Request, res: Response): void => {
       if (evaluation.isValid && evaluation.appliedOffer) {
         offerDiscountAmount = evaluation.discountAmount;
         appliedOfferCode = evaluation.appliedOffer.code;
-        db.incrementOfferUsage(evaluation.appliedOffer.code);
+        if (typeof (db as any).incrementOfferUsage === 'function') {
+          (db as any).incrementOfferUsage(evaluation.appliedOffer.code);
+        }
       }
     }
 
@@ -554,12 +555,11 @@ router.patch('/:id/status', (req: Request, res: Response): void => {
     }
 
     // Role-based state transition permissions
-    if (user.role === 'DESIGNER_EMPLOYEE') {
-      if (caseRec.assignedDesignerId !== user.id) {
+    if (user.role === 'DESIGNER_EMPLOYEE' || (user.role as any) === 'DESIGNER') {
+      if (caseRec.assignedDesignerId !== user.id && caseRec.assignedDesignerId !== user.email) {
         res.status(403).json({ error: 'You are not assigned to this case.' });
         return;
       }
-      // Designers can move between IN_DESIGN, QC, and APPROVAL
       const allowedForDesigner: CaseStatus[] = ['IN_DESIGN', 'QC', 'APPROVAL'];
       if (!allowedForDesigner.includes(newStatus)) {
         res.status(403).json({ error: `CAD Designers cannot directly transition case to ${newStatus}.` });
@@ -635,7 +635,7 @@ router.patch('/:id/status', (req: Request, res: Response): void => {
         userId: caseRec.assignedDesignerId,
         title: `Case ${caseRec.id} in Revision`,
         message: `Case moved to REVISION: ${comment || 'Please inspect comments.'}`,
-        link: `/employee/cases/${caseRec.id}`,
+        link: `/designer/dashboard`,
         type: 'WARNING'
       });
     }
@@ -646,7 +646,7 @@ router.patch('/:id/status', (req: Request, res: Response): void => {
   }
 });
 
-// 6. PATCH /api/cases/:id/assign - Admin Assigns Designer
+// 6. PATCH /api/cases/:id/assign - Admin Assigns Designer (Fixed: Flexible Search by ID, Email, Name & All Roles)
 router.patch('/:id/assign', (req: Request, res: Response): void => {
   try {
     const user = getAuthenticatedUser(req);
@@ -661,14 +661,29 @@ router.patch('/:id/assign', (req: Request, res: Response): void => {
       return;
     }
 
-    const { designerId, notes } = req.body;
+    const { designerId, notes = '' } = req.body;
     if (!designerId) {
-      res.status(400).json({ error: 'Designer ID is required.' });
+      res.status(400).json({ error: 'Please select a valid CAD designer.' });
       return;
     }
 
-    const designer = db.findUserById(designerId);
-    if (!designer || designer.role !== 'DESIGNER_EMPLOYEE') {
+    // ID, Email বা Name যেকোনোটি দিয়ে ম্যাচ করবে
+    const allUsers = db.getAllUsers();
+    const searchTarget = String(designerId).trim().toLowerCase();
+    const designer = allUsers.find(u => 
+      u.id === designerId || 
+      u.email.toLowerCase() === searchTarget || 
+      u.name.toLowerCase() === searchTarget
+    );
+
+    if (!designer) {
+      res.status(400).json({ error: 'Selected user is not a valid CAD designer.' });
+      return;
+    }
+
+    // Designer, Employee ও Admin সব ভ্যালিড রোল সাপোর্ট করবে
+    const validRoles = ['DESIGNER_EMPLOYEE', 'DESIGNER', 'CAD_DESIGNER', 'ADMIN', 'SUPER_ADMIN', 'QC_INSPECTOR', 'STAFF'];
+    if (!validRoles.includes(designer.role)) {
       res.status(400).json({ error: 'Selected user is not a valid CAD designer.' });
       return;
     }
@@ -678,20 +693,23 @@ router.patch('/:id/assign', (req: Request, res: Response): void => {
 
     caseRec.assignedDesignerId = designer.id;
     caseRec.assignedDesignerName = designer.name;
-    caseRec.status = 'ASSIGNED';
+    if (caseRec.status === 'NEW' || caseRec.status === 'RECEIVED') {
+      caseRec.status = 'ASSIGNED';
+    }
     caseRec.updatedAt = now;
 
+    if (!caseRec.timeline) caseRec.timeline = [];
     caseRec.timeline.push({
       id: `tl-${Date.now()}`,
       caseId: caseRec.id,
       timestamp: now,
       previousStatus,
-      newStatus: 'ASSIGNED',
+      newStatus: caseRec.status,
       action: `Assigned to ${designer.name}`,
       userId: user.id,
       userName: user.name,
       userRole: user.role,
-      comment: notes || `Case assigned to senior designer ${designer.name}.`
+      comment: notes || `Case assigned to CAD designer ${designer.name}.`
     });
 
     db.updateCase(caseRec.id, caseRec);
@@ -713,7 +731,7 @@ router.patch('/:id/assign', (req: Request, res: Response): void => {
       userId: designer.id,
       title: `New Case Assigned: ${caseRec.id}`,
       message: `You have been assigned ${caseRec.unitsQuantity} unit(s) of ${caseRec.serviceName}.`,
-      link: `/employee/cases/${caseRec.id}`,
+      link: `/designer/dashboard`,
       type: 'INFO'
     });
 
@@ -743,7 +761,7 @@ router.post('/:id/comments', (req: Request, res: Response): void => {
       res.status(403).json({ error: 'Unauthorized.' });
       return;
     }
-    if (user.role === 'DESIGNER_EMPLOYEE' && caseRec.assignedDesignerId !== user.id) {
+    if ((user.role === 'DESIGNER_EMPLOYEE' || (user.role as any) === 'DESIGNER') && caseRec.assignedDesignerId !== user.id) {
       res.status(403).json({ error: 'Unauthorized.' });
       return;
     }
@@ -767,6 +785,7 @@ router.post('/:id/comments', (req: Request, res: Response): void => {
       timestamp: new Date().toISOString()
     };
 
+    if (!caseRec.comments) caseRec.comments = [];
     caseRec.comments.push(newComment);
     db.updateCase(caseRec.id, caseRec);
 
@@ -804,6 +823,7 @@ router.post('/:id/approve', (req: Request, res: Response): void => {
     }
     caseRec.updatedAt = now;
 
+    if (!caseRec.timeline) caseRec.timeline = [];
     caseRec.timeline.push({
       id: `tl-${Date.now()}`,
       caseId: caseRec.id,
@@ -837,7 +857,7 @@ router.post('/:id/approve', (req: Request, res: Response): void => {
         userId: caseRec.assignedDesignerId,
         title: `Design Approved: ${caseRec.id}`,
         message: `Dr. ${caseRec.customerName} approved your design! Great work.`,
-        link: `/employee/cases/${caseRec.id}`,
+        link: `/designer/dashboard`,
         type: 'SUCCESS'
       });
     }
@@ -889,6 +909,7 @@ router.post('/:id/revision', (req: Request, res: Response): void => {
       reason: revisionReason.trim()
     });
 
+    if (!caseRec.timeline) caseRec.timeline = [];
     caseRec.timeline.push({
       id: `tl-${Date.now()}`,
       caseId: caseRec.id,
@@ -922,7 +943,7 @@ router.post('/:id/revision', (req: Request, res: Response): void => {
         userId: caseRec.assignedDesignerId,
         title: `Revision Requested on ${caseRec.id}`,
         message: `Client requested modifications: "${revisionReason.trim().substring(0, 80)}..."`,
-        link: `/employee/cases/${caseRec.id}`,
+        link: `/designer/dashboard`,
         type: 'WARNING'
       });
     }
