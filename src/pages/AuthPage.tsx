@@ -8,12 +8,9 @@ import {
   User,
   Phone,
   Building,
-  Sparkles,
   ArrowRight,
-  ShieldCheck,
   UserCheck,
   Boxes,
-  KeyRound,
   AlertCircle
 } from 'lucide-react';
 
@@ -165,7 +162,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           </button>
         </div>
 
-        {/* 2. Doctor Tab Mode: Sign In vs Register */}
+        {/* 2. Doctor Mode: Sign In vs Register */}
         {!isDesignerPortal && (
           <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800/80 mb-5 text-xs font-semibold">
             <button
@@ -320,7 +317,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           <button
             type="submit"
             disabled={loading || googleLoading}
-            className={`w-full py-3 font-bold text-xs rounded-xl shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2 mt-2 text-white ${
+            className={`w-full py-3 font-bold text-xs rounded-xl shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2 mt-3 text-white ${
               isDesignerPortal
                 ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 shadow-amber-500/25'
                 : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-cyan-500/25'
@@ -338,48 +335,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
-
-        {/* Quick One-Click Credentials Demo for Testing */}
-        <div className="mt-5 pt-3 border-t border-slate-800/80 text-center space-y-2">
-          <div className="text-[11px] text-slate-400">One-Click Quick Login:</div>
-          <div className="flex items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('DOCTOR');
-                setIsLogin(true);
-                setEmail('dr.sharma@dentallab.com');
-                setPassword('Doctor@123');
-              }}
-              className="px-2.5 py-1 bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 rounded-lg text-[11px] text-cyan-300 transition"
-            >
-              Demo Doctor
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('DESIGNER');
-                setIsLogin(true);
-                setEmail('designer.cad@crowndesk.com');
-                setPassword('Designer@123');
-              }}
-              className="px-2.5 py-1 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-500/30 rounded-lg text-[11px] text-amber-300 transition"
-            >
-              Demo CAD Designer
-            </button>
-          </div>
-        </div>
-
-        {/* Footer Admin Link */}
-        <div className="mt-3 text-center">
-          <button
-            onClick={() => onNavigate('admin-login')}
-            className="text-[11px] text-slate-500 hover:text-purple-400 transition"
-          >
-            Super Admin & Staff Console →
-          </button>
-        </div>
       </div>
 
       {forgotPasswordOpen && (
