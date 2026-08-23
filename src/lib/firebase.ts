@@ -16,14 +16,15 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 
-// Environment variables with fallback to prevent build failure on Vercel/GitHub
+// CrownDesk Official Firebase Credentials
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDemoFallbackKeyForBuild123456',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'crowndesk-app.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'crowndesk-app',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'crowndesk-app.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1029384756',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1029384756:web:9876543210abcdef',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDMbpPJ4RAUzAQCXoY1hDFRcq-zWHCgjiI',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'crowndisk-f682d.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'crowndisk-f682d',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'crowndisk-f682d.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '300664696471',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:300664696471:web:4aec87ef29aeb9d5a1c3d2',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-RD8LG541CF',
   firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)'
 };
 
