@@ -1,41 +1,32 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://wubumkaugtoyktzrxoiu.supabase.co')
-  .trim()
-  .replace(/\/rest\/v1\/?$/i, '')
-  .replace(/\/+$/, '');
+export const SUPABASE_URL = (
+  process.env.SUPABASE_URL || 
+  'https://wubumkaugtoyktzrxoiu.supabase.co'
+).trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
 
-const SUPABASE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+export const SUPABASE_KEY = (
+  process.env.SUPABASE_SERVICE_ROLE_KEY || 
+  process.env.SUPABASE_ANON_KEY || 
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1YnVta2F1Z3RveWt0enJ4b2l1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4Njk2NzAyOCwiZXhwIjoyMTAyNTQzMDI4fQ.ZpVXK4OyRIaMbLc3jmAuZN36_yECTwyDnDC17Pp4s8M'
+).trim();
 
 let supabaseClient: SupabaseClient | null = null;
 
-export function getSupabaseAdmin(): SupabaseClient | null {
+export function getSupabaseAdmin(): SupabaseClient {
   if (supabaseClient) return supabaseClient;
 
-  if (SUPABASE_URL && SUPABASE_KEY) {
-    try {
-      supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      });
-      return supabaseClient;
-    } catch (err) {
-      console.warn('Failed to initialize Supabase client:', err);
-    }
-  }
-  return null;
+  supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+  return supabaseClient;
 }
 
-// সরাসরি ইমপোর্টের সুবিধার্থে এক্সপোর্ট
-export const supabase = getSupabaseAdmin() || createClient(
-  SUPABASE_URL,
-  SUPABASE_KEY || 'dummy_anon_key_placeholder',
-  {
-    auth: { persistSession: false, autoRefreshToken: false }
-  }
-);
+// সরাসরি ব্যবহারের জন্য এক্সপোর্ট
+export const supabase: SupabaseClient = getSupabaseAdmin();
 
 export const SUPABASE_BUCKET_NAME = process.env.STORAGE_BUCKET || process.env.AWS_S3_BUCKET || 'crowndesk-files';
 
@@ -47,13 +38,8 @@ export async function uploadToSupabaseStorage(
   buffer: Buffer,
   contentType: string
 ): Promise<{ success: boolean; storagePath: string; error?: string }> {
-  const client = getSupabaseAdmin();
-  if (!client) {
-    return { success: false, storagePath, error: 'Supabase credentials not configured' };
-  }
-
   try {
-    const { error } = await client.storage
+    const { error } = await supabase.storage
       .from(SUPABASE_BUCKET_NAME)
       .upload(storagePath, buffer, {
         contentType,
@@ -78,13 +64,8 @@ export async function uploadToSupabaseStorage(
 export async function downloadFromSupabaseStorage(
   storagePath: string
 ): Promise<{ data: Buffer | null; error?: string }> {
-  const client = getSupabaseAdmin();
-  if (!client) {
-    return { data: null, error: 'Supabase credentials not configured' };
-  }
-
   try {
-    const { data, error } = await client.storage
+    const { data, error } = await supabase.storage
       .from(SUPABASE_BUCKET_NAME)
       .download(storagePath);
 
@@ -104,11 +85,8 @@ export async function downloadFromSupabaseStorage(
  * Database Helpers for Permanent Profile Persistence
  */
 export async function syncUserProfileToSupabase(user: any): Promise<boolean> {
-  const client = getSupabaseAdmin();
-  if (!client) return false;
-
   try {
-    const { error } = await client.from('profiles').upsert({
+    const { error } = await supabase.from('profiles').upsert({
       id: user.id,
       email: user.email.toLowerCase().trim(),
       name: user.name,
