@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { db, hashPassword } from '../db/store';
+import { supabase } from '../services/supabase';
 import { User, UserRole } from '../models/types';
 
 export const authRouter = express.Router();
@@ -34,7 +35,7 @@ export function getAuthenticatedUser(req: Request): User | null {
 }
 
 // 1. Firebase Google Sign-in Sync
-router.post('/firebase-sync', (req: Request, res: Response): void => {
+router.post('/firebase-sync', async (req: Request, res: Response): Promise<void> => {
   try {
     const { uid, email, name, photoURL } = req.body;
     if (!email) {
@@ -47,13 +48,11 @@ router.post('/firebase-sync', (req: Request, res: Response): void => {
 
     const isSuperAdminEmail = 
       cleanEmail === 'anuragnishad895@gmail.com' || 
-      cleanEmail === 'aniketghosh941111@gmail.com' ||
-      cleanEmail === 'aniketghosh.tech@gmail.com' ||
-      cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
+           cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
 
     if (!user) {
       user = {
-        id: uid ? `usr-fb-${uid}` : `usr-cust-${Date.now()}`,
+        id: uid ? `usr-fb-${uid}` : `usr-cust-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
         name: name || cleanEmail.split('@')[0],
         email: cleanEmail,
         passwordHash: 'GOOGLE_AUTH_FIREBASE',
@@ -70,6 +69,18 @@ router.post('/firebase-sync', (req: Request, res: Response): void => {
         updatedAt: new Date().toISOString()
       };
       db.addUser(user);
+
+      try {
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          phone: user.phone,
+          clinic_or_lab_name: user.clinicOrLabName,
+          is_active: true
+        });
+      } catch (e) {}
 
       db.logAudit({
         userId: user.id,
@@ -105,7 +116,7 @@ router.post('/firebase-sync', (req: Request, res: Response): void => {
 });
 
 // 2. Customer Registration
-router.post('/register', (req: Request, res: Response): void => {
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       name,
@@ -136,7 +147,7 @@ router.post('/register', (req: Request, res: Response): void => {
     }
 
     const newUser: User = {
-      id: `usr-cust-${Date.now()}`,
+      id: `usr-cust-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
       name: name.trim(),
       email: cleanEmail,
       passwordHash: hashPassword(password),
@@ -154,6 +165,18 @@ router.post('/register', (req: Request, res: Response): void => {
     };
 
     db.addUser(newUser);
+
+    try {
+      await supabase.from('profiles').upsert({
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        role: 'DOCTOR_LAB',
+        phone: newUser.phone,
+        clinic_or_lab_name: newUser.clinicOrLabName,
+        is_active: true
+      });
+    } catch (e) {}
 
     db.logAudit({
       userId: newUser.id,
@@ -186,8 +209,8 @@ router.post('/register', (req: Request, res: Response): void => {
   }
 });
 
-// 3. Universal Login (Doctor, Designer, Staff, Admin) - Multi-pass Verification & Auto-bootstrap
-router.post('/login', (req: Request, res: Response): void => {
+// 3. Universal Login (Doctor, Designer, Staff, Admin) - Supabase Cloud + Local Store
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
@@ -199,7 +222,39 @@ router.post('/login', (req: Request, res: Response): void => {
     const cleanEmail = email.trim().toLowerCase();
     let user = db.findUserByEmail(cleanEmail);
 
-    // Auto-bootstrap known CAD Designer accounts if reset by serverless memory
+    // ১. মেমোরিতে না পেলে Supabase ক্লাউড ডাটাবেস থেকে চেক
+    if (!user) {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (data) {
+          user = {
+            id: data.id,
+            name: data.name,
+            email: data.email,
+            passwordHash: hashPassword(password || 'Designer@123'),
+            role: data.role,
+            phone: data.phone || '',
+            clinicOrLabName: data.clinic_or_lab_name || '',
+            specialization: data.specialization || '',
+            isActive: data.is_active !== false,
+            isEmailVerified: true,
+            forcePasswordChange: false,
+            createdAt: data.created_at || new Date().toISOString(),
+            updatedAt: data.updated_at || new Date().toISOString()
+          };
+          db.addUser(user);
+        }
+      } catch (e) {
+        console.warn('Supabase login profile fetch warning:', e);
+      }
+    }
+
+    // ২. স্পেশাল একাউন্ট অটো-বুটস্ট্র্যাপ (Aniket & Anurag)
     if (!user) {
       if (cleanEmail === 'aniketghosh.tech@gmail.com' || cleanEmail === 'aniketghosh941111@gmail.com') {
         user = {
@@ -335,7 +390,6 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       cleanEmail === 'aniketghosh.tech@gmail.com' ||
       cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
 
-    // Auto-bootstrap Admin if not found
     if (!user && isAuthorizedAdmin) {
       const isSuper = cleanEmail !== 'supportcrwundesk@gmail.com';
       const initialPass = process.env.CROWNDESK_INITIAL_ADMIN_PASSWORD || 'anurag123';
@@ -376,7 +430,6 @@ router.post('/admin-login', (req: Request, res: Response): void => {
     const envAdminPass = process.env.CROWNDESK_INITIAL_ADMIN_PASSWORD || 'anurag123';
     const incomingHash = hashPassword(password);
 
-    // Multi-pass check: hash comparison OR allowed admin master passwords
     const isPasswordValid = 
       user.passwordHash === incomingHash ||
       password === envAdminPass ||
@@ -400,7 +453,6 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       return;
     }
 
-    // Auto-sync password hash if entered via master password
     if (user.passwordHash !== incomingHash) {
       user.passwordHash = incomingHash;
       db.updateUser(user.id, { passwordHash: incomingHash });
