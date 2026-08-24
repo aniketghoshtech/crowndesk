@@ -1,19 +1,20 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+const SUPABASE_URL = (process.env.SUPABASE_URL || 'https://wubumkaugtoyktzrxoiu.supabase.co')
+  .trim()
+  .replace(/\/rest\/v1\/?$/i, '')
+  .replace(/\/+$/, '');
+
+const SUPABASE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+
 let supabaseClient: SupabaseClient | null = null;
 
 export function getSupabaseAdmin(): SupabaseClient | null {
   if (supabaseClient) return supabaseClient;
 
-  const rawUrl = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-
-  if (rawUrl && key) {
+  if (SUPABASE_URL && SUPABASE_KEY) {
     try {
-      // URL-এর শেষে /rest/v1 বা অতিরিক্ত স্ল্যাশ থাকলে তা স্বয়ংক্রিয়ভাবে ক্লিন করে নেওয়া হচ্ছে
-      const cleanUrl = rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
-
-      supabaseClient = createClient(cleanUrl, key.trim(), {
+      supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
@@ -27,6 +28,15 @@ export function getSupabaseAdmin(): SupabaseClient | null {
   return null;
 }
 
+// সরাসরি ইমপোর্টের সুবিধার্থে এক্সপোর্ট
+export const supabase = getSupabaseAdmin() || createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY || 'dummy_anon_key_placeholder',
+  {
+    auth: { persistSession: false, autoRefreshToken: false }
+  }
+);
+
 export const SUPABASE_BUCKET_NAME = process.env.STORAGE_BUCKET || process.env.AWS_S3_BUCKET || 'crowndesk-files';
 
 /**
@@ -37,13 +47,13 @@ export async function uploadToSupabaseStorage(
   buffer: Buffer,
   contentType: string
 ): Promise<{ success: boolean; storagePath: string; error?: string }> {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
+  const client = getSupabaseAdmin();
+  if (!client) {
     return { success: false, storagePath, error: 'Supabase credentials not configured' };
   }
 
   try {
-    const { error } = await supabase.storage
+    const { error } = await client.storage
       .from(SUPABASE_BUCKET_NAME)
       .upload(storagePath, buffer, {
         contentType,
@@ -68,13 +78,13 @@ export async function uploadToSupabaseStorage(
 export async function downloadFromSupabaseStorage(
   storagePath: string
 ): Promise<{ data: Buffer | null; error?: string }> {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) {
+  const client = getSupabaseAdmin();
+  if (!client) {
     return { data: null, error: 'Supabase credentials not configured' };
   }
 
   try {
-    const { data, error } = await supabase.storage
+    const { data, error } = await client.storage
       .from(SUPABASE_BUCKET_NAME)
       .download(storagePath);
 
@@ -87,5 +97,36 @@ export async function downloadFromSupabaseStorage(
   } catch (err: any) {
     console.error('Supabase download exception:', err);
     return { data: null, error: err.message };
+  }
+}
+
+/**
+ * Database Helpers for Permanent Profile Persistence
+ */
+export async function syncUserProfileToSupabase(user: any): Promise<boolean> {
+  const client = getSupabaseAdmin();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('profiles').upsert({
+      id: user.id,
+      email: user.email.toLowerCase().trim(),
+      name: user.name,
+      role: user.role,
+      phone: user.phone || '',
+      clinic_or_lab_name: user.clinicOrLabName || '',
+      specialization: user.specialization || '',
+      is_active: user.isActive !== false,
+      updated_at: new Date().toISOString()
+    });
+
+    if (error) {
+      console.warn('Failed to upsert profile to Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Supabase sync exception:', err);
+    return false;
   }
 }
