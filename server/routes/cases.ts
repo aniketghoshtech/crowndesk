@@ -147,6 +147,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     } else if (user.role === 'DOCTOR_LAB') {
       permittedCases = allCases.filter(c => c.customerId === user.id || c.customerEmail?.toLowerCase() === user.email.toLowerCase());
     } else {
+      // ডিজাইনার তার নিজের অ্যাসাইন করা এবং আন-অ্যাসাইনড সব কেস দেখতে পাবে
       permittedCases = allCases
         .filter(c => c.assignedDesignerId === user.id || c.assignedDesignerId === user.email || c.assignedDesignerName?.toLowerCase() === user.name?.toLowerCase() || !c.assignedDesignerId)
         .map(c => sanitizeCaseForRole(c, user.role, user.id));
@@ -378,7 +379,6 @@ router.patch('/:id/assign', async (req: Request, res: Response): Promise<void> =
 
     db.updateCase(caseRec.id, caseRec);
 
-    // নিশ্চিত UPSERT: ডাটাবেসে কেসটি না থাকলেও সাথে সাথে তৈরি হয়ে ডিজাইনারের নাম সেভ হবে
     try {
       await supabase.from('cases').upsert({
         id: caseRec.id,
@@ -482,6 +482,92 @@ router.post('/:id/revision', async (req: Request, res: Response): Promise<void> 
     } catch (e) {}
   }
   res.json({ message: 'Revision requested.', case: caseRec });
+});
+
+// 7. POST /api/cases/:id/deliver - (Confirm Delivery Receipt এরর ফিক্স)
+router.post('/:id/deliver', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = getAuthenticatedUser(req);
+    const caseRec = db.findCaseById(req.params.id);
+    if (!caseRec) {
+      res.status(404).json({ error: 'Case not found.' });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const previousStatus = caseRec.status;
+    caseRec.status = 'DELIVERED';
+    caseRec.finalStlUnlocked = true;
+    caseRec.updatedAt = now;
+
+    if (!caseRec.timeline) caseRec.timeline = [];
+    caseRec.timeline.push({
+      id: `tl-${Date.now()}`,
+      caseId: caseRec.id,
+      timestamp: now,
+      previousStatus,
+      newStatus: 'DELIVERED',
+      action: 'Case Delivered & Final Files Downloaded',
+      userId: user?.id || 'client',
+      userName: user?.name || 'Doctor/Lab Client',
+      userRole: user?.role || 'DOCTOR_LAB',
+      comment: req.body.comment || 'Final milling CAM/STL files delivery acknowledged by client.'
+    });
+
+    db.updateCase(caseRec.id, caseRec);
+
+    try {
+      await supabase.from('cases').upsert({
+        id: caseRec.id,
+        status: 'DELIVERED',
+        updated_at: now
+      });
+    } catch (e) {}
+
+    res.json({ message: 'Delivery confirmed successfully!', case: caseRec });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to confirm delivery.' });
+  }
+});
+
+// 8. POST /api/cases/:id/comments - চ্যাট ও কমেন্ট সাপোর্ট
+router.post('/:id/comments', (req: Request, res: Response): void => {
+  try {
+    const user = getAuthenticatedUser(req);
+    const caseRec = db.findCaseById(req.params.id);
+    if (!caseRec) {
+      res.status(404).json({ error: 'Case not found.' });
+      return;
+    }
+
+    const { message, isTechnicalOnly = false, attachmentUrl, attachmentName } = req.body;
+    if (!message || !message.trim()) {
+      res.status(400).json({ error: 'Message cannot be empty.' });
+      return;
+    }
+
+    const newComment = {
+      id: `comm-${Date.now()}`,
+      caseId: caseRec.id,
+      userId: user?.id || 'client',
+      userName: user?.name || 'Client',
+      userRole: user?.role || 'DOCTOR_LAB',
+      message: message.trim(),
+      attachmentUrl,
+      attachmentName,
+      isTechnicalOnly: Boolean(isTechnicalOnly),
+      timestamp: new Date().toISOString()
+    };
+
+    if (!caseRec.comments) caseRec.comments = [];
+    caseRec.comments.push(newComment);
+    caseRec.updatedAt = new Date().toISOString();
+    db.updateCase(caseRec.id, caseRec);
+
+    res.status(201).json({ message: 'Comment added.', comment: newComment });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to post comment.' });
+  }
 });
 
 export { router };
