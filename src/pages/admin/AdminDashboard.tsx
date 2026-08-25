@@ -285,14 +285,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     fetchAllData();
   }, []);
 
-  // Designers filter (All CAD Specialist roles)
+  // Designers filter
   const designers = employees.filter(e => 
     e.role === 'DESIGNER_EMPLOYEE' || 
     (e.role as any) === 'DESIGNER' || 
     (e.role as any) === 'CAD_DESIGNER'
   );
 
-  // Filtered designers by Active/Offline status
+  // Filtered designers
   const filteredDesigners = designers.filter(d => {
     if (designerStatusFilter === 'ACTIVE') return d.isActive !== false;
     if (designerStatusFilter === 'OFFLINE') return d.isActive === false;
@@ -306,13 +306,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     try {
       await api.assignCaseToDesigner(assignModal.caseId, selectedDesignerId);
       setAssignModal({ open: false, caseId: '' });
-      fetchAllData();
+      await fetchAllData();
+      alert('CAD Designer assigned successfully!');
     } catch (err: any) {
       alert(err.message || 'Assignment failed');
     }
   };
 
-  // Case Status Transition with Permanent Logging
+  // Case Status Transition
   const handleStatusUpdateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!statusModal.caseId || !statusModal.newStatus) return;
@@ -324,7 +325,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       );
       const caseIdUpdated = statusModal.caseId;
       setStatusModal({ open: false, caseId: '', currentStatus: 'NEW', newStatus: 'NEW', comment: '' });
-      fetchAllData();
+      await fetchAllData();
       if (inspectCase && inspectCase.id === caseIdUpdated) {
         const updated = await api.getCaseById(caseIdUpdated);
         if (updated?.case) setInspectCase(updated.case);
@@ -334,28 +335,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     }
   };
 
-  // Staff Creation
-  const handleCreateStaff = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.createAdminUser(newStaffData);
-      setCreateStaffModal(false);
-      setNewStaffData({ name: '', email: '', password: '', role: 'DESIGNER_EMPLOYEE', phone: '', specialization: 'Anatomic Crowns & Bridges' });
-      fetchAllData();
-    } catch (err: any) {
-      alert(err.message || 'Staff creation failed');
-    }
-  };
-
   // Case CRUD Handlers
   const handleSaveCase = async (caseData: any) => {
-    if (caseModal.editingCase) {
-      await api.updateAdminCase(caseModal.editingCase.id, caseData);
-    } else {
-      await api.createAdminCase(caseData);
+    try {
+      if (caseModal.editingCase) {
+        await api.updateAdminCase(caseModal.editingCase.id, caseData);
+      } else {
+        await api.createAdminCase(caseData);
+      }
+      setCaseModal({ open: false, editingCase: null });
+      await fetchAllData();
+      alert('Case saved and synced to cloud!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save case');
     }
-    setCaseModal({ open: false, editingCase: null });
-    fetchAllData();
   };
 
   const handleDeleteCase = (c: CaseRecord) => {
@@ -368,15 +361,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     });
   };
 
-  // Customer CRUD Handlers
+  // Customer CRUD Handlers (১০% সুরক্ষিত ও নোটিফিকেশন সহ)
   const handleSaveCustomer = async (custData: any) => {
-    if (customerModal.editingCustomer) {
-      await api.updateAdminCustomer(customerModal.editingCustomer.id, custData);
-    } else {
-      await api.createAdminCustomer(custData);
+    try {
+      if (customerModal.editingCustomer) {
+        await api.updateAdminCustomer(customerModal.editingCustomer.id, custData);
+      } else {
+        await api.createAdminCustomer(custData);
+      }
+      setCustomerModal({ open: false, editingCustomer: null });
+      await fetchAllData();
+      alert('Customer saved successfully and synced to cloud!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save customer');
     }
-    setCustomerModal({ open: false, editingCustomer: null });
-    fetchAllData();
   };
 
   const handleDeleteCustomer = (cust: any) => {
@@ -391,19 +389,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
 
   // Employee & Designer CRUD Handlers
   const handleSaveEmployee = async (empData: any) => {
-    if (employeeModal.editingEmployee) {
-      await api.updateAdminUser(employeeModal.editingEmployee.id, empData);
-    } else {
-      await api.createAdminUser(empData);
+    try {
+      if (employeeModal.editingEmployee) {
+        await api.updateAdminUser(employeeModal.editingEmployee.id, empData);
+      } else {
+        await api.createAdminUser(empData);
+      }
+      setEmployeeModal({ open: false, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' });
+      await fetchAllData();
+      alert('Employee/Designer saved successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save employee');
     }
-    setEmployeeModal({ open: false, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' });
-    fetchAllData();
   };
 
   const handleToggleEmployeeStatus = async (emp: User) => {
     try {
       await api.toggleAdminUserStatus(emp.id);
-      fetchAllData();
+      await fetchAllData();
     } catch (err: any) {
       alert(err.message || 'Failed to toggle status');
     }
@@ -435,46 +438,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         await api.deleteAdminUser(deleteConfirm.id);
       }
       setDeleteConfirm({ open: false, type: 'CASE', id: '', name: '', loading: false });
-      fetchAllData();
+      await fetchAllData();
+      alert('Record deleted successfully.');
     } catch (err: any) {
       alert(err.message || 'Failed to delete record');
       setDeleteConfirm(prev => ({ ...prev, loading: false }));
-    }
-  };
-
-  // Service Creation
-  const handleCreateService = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.saveService({
-        code: newServiceData.code.toUpperCase(),
-        name: newServiceData.name,
-        description: newServiceData.description,
-        unitType: 'Per Tooth',
-        unitPriceINR: Number(newServiceData.unitPriceINR),
-        unitPriceUSD: Number(newServiceData.unitPriceUSD),
-        standardTurnaroundHours: Number(newServiceData.standardTurnaroundHours),
-        materials: newServiceData.materials.split(',').map(s => s.trim()),
-        active: true
-      });
-      setCreateServiceModal(false);
-      fetchAllData();
-    } catch (err: any) {
-      alert(err.message || 'Service save failed');
-    }
-  };
-
-  // Broadcast Notification
-  const handleBroadcast = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await api.broadcastNotification(broadcastData);
-      setBroadcastModal(false);
-      setBroadcastData({ title: '', message: '', targetRole: 'ALL', type: 'INFO' });
-      fetchAllData();
-      alert('Notification broadcast successfully dispatched.');
-    } catch (err: any) {
-      alert(err.message || 'Broadcast failed');
     }
   };
 
@@ -550,14 +518,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     cust.phone?.toLowerCase().includes(customerSearch.toLowerCase())
   );
 
-  // Filtered audit logs
-  const filteredAuditLogs = auditLogs.filter(a =>
-    a.action?.toLowerCase().includes(auditSearch.toLowerCase()) ||
-    a.userName?.toLowerCase().includes(auditSearch.toLowerCase()) ||
-    a.details?.toLowerCase().includes(auditSearch.toLowerCase()) ||
-    a.targetEntity?.toLowerCase().includes(auditSearch.toLowerCase())
-  );
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       
@@ -614,12 +574,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
             <span className="sm:hidden">Broadcast</span>
           </button>
 
-          {/* Admin Logout Button */}
           <button
             onClick={handleLogout}
             disabled={loggingOut}
             className="px-3.5 py-2 bg-rose-950/50 hover:bg-rose-900/80 border border-rose-500/40 hover:border-rose-500/70 text-rose-300 hover:text-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
-            title="Log out of CrownDesk Admin Panel"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>{loggingOut ? 'Signing Out...' : 'Logout'}</span>
@@ -627,7 +585,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         </div>
       </div>
 
-      {/* Complete 17-Item Admin Navigation Bar */}
+      {/* 17-Item Admin Navigation Bar */}
       <div className="bg-slate-900/90 border border-slate-800 p-2 rounded-2xl shadow-xl overflow-x-auto">
         <div className="flex items-center gap-1 min-w-max">
           {navItems.map(item => {
@@ -669,414 +627,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         const kpiActiveCases = analytics?.kpis?.activeCases ?? cases.filter(c => ['RECEIVED', 'ASSIGNED', 'IN_DESIGN', 'QC', 'APPROVAL', 'REVISION'].includes(c.status)).length;
         const kpiCompletedCases = analytics?.kpis?.completedCases ?? cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
         const kpiPendingCases = analytics?.kpis?.pendingCases ?? cases.filter(c => !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-
         const kpiTotalRevenue = analytics?.kpis?.totalRevenue ?? analytics?.totalRevenueINR ?? 0;
         const kpiTodayRevenue = analytics?.kpis?.todayRevenue ?? 0;
-        const kpiPendingPayments = analytics?.kpis?.pendingPayments ?? cases.filter(c => c.paymentStatus === 'PENDING' || c.paymentStatus === 'UNPAID').length;
-        const kpiPendingPaymentsAmount = analytics?.kpis?.pendingPaymentsAmount ?? cases.filter(c => c.paymentStatus === 'PENDING' || c.paymentStatus === 'UNPAID').reduce((sum, c) => sum + (c.finalTotalAmount || 0), 0);
-
-        const kpiTotalCustomers = analytics?.kpis?.totalCustomers ?? (customers.length || employees.filter(u => u.role === 'DOCTOR_LAB').length);
-        const kpiActiveDesigners = analytics?.kpis?.activeDesigners ?? (designers.filter(d => d.isActive !== false).length || employees.filter(e => e.role === 'DESIGNER_EMPLOYEE').length);
+        const kpiPendingPayments = analytics?.kpis?.pendingPayments ?? cases.filter(c => c.paymentStatus === 'PENDING').length;
+        const kpiTotalCustomers = analytics?.kpis?.totalCustomers ?? customers.length;
+        const kpiActiveDesigners = analytics?.kpis?.activeDesigners ?? designers.filter(d => d.isActive !== false).length;
 
         return (
           <div className="space-y-6">
-            
-            {/* KPI Header & Real-time Live Badge */}
-            <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-              <div>
-                <h2 className="text-base sm:text-lg font-black text-slate-100 flex items-center gap-2">
-                  <span>Executive Key Performance Indicators (KPIs)</span>
-                  <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Live Sync
-                  </span>
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Comprehensive real-time tracking across clinical pipelines, revenue reconciliation, customer base, and technician workforce
-                </p>
-              </div>
-            </div>
-
-            {/* 10 Core Administrative KPIs Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
-              
-              {/* 1. Total Cases */}
-              <div
-                onClick={() => {
-                  setCaseStatusFilter('ALL');
-                  setActiveTab('CASES');
-                }}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl shadow-lg hover:shadow-purple-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-purple-300 transition uppercase tracking-wider">
-                    Total Cases
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:scale-110 transition">
-                    <FolderKanban className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-slate-100 font-mono tracking-tight group-hover:text-purple-300 transition">
-                    {kpiTotalCases}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium pt-1 flex items-center gap-1">
-                    <span>All-time CAD orders</span>
-                    <ChevronRight className="w-3 h-3 text-purple-400 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
+              <div onClick={() => setActiveTab('CASES')} className="cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 p-4 rounded-2xl">
+                <div className="text-[11px] font-bold text-slate-400 uppercase">Total Cases</div>
+                <div className="text-2xl font-black text-slate-100 font-mono">{kpiTotalCases}</div>
               </div>
-
-              {/* 2. New Cases */}
-              <div
-                onClick={() => {
-                  setCaseStatusFilter('NEW');
-                  setActiveTab('CASES');
-                }}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-rose-500/50 p-4 rounded-2xl shadow-lg hover:shadow-rose-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-rose-300 transition uppercase tracking-wider">
-                    New Cases
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 group-hover:scale-110 transition">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-rose-400 font-mono tracking-tight">
-                    {kpiNewCases}
-                  </div>
-                  <div className="text-[10px] text-rose-400/90 font-medium pt-1 flex items-center gap-1">
-                    <span>Awaiting assignment</span>
-                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
+              <div onClick={() => setActiveTab('CASES')} className="cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 p-4 rounded-2xl">
+                <div className="text-[11px] font-bold text-slate-400 uppercase">New Cases</div>
+                <div className="text-2xl font-black text-rose-400 font-mono">{kpiNewCases}</div>
               </div>
-
-              {/* 3. Active Cases */}
-              <div
-                onClick={() => {
-                  setCaseStatusFilter('IN_DESIGN');
-                  setActiveTab('CASES');
-                }}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl shadow-lg hover:shadow-amber-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-amber-300 transition uppercase tracking-wider">
-                    Active Cases
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-110 transition">
-                    <Activity className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-amber-400 font-mono tracking-tight">
-                    {kpiActiveCases}
-                  </div>
-                  <div className="text-[10px] text-amber-400/90 font-medium pt-1 flex items-center gap-1">
-                    <span>In-design, QC & review</span>
-                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
+              <div onClick={() => setActiveTab('CASES')} className="cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 p-4 rounded-2xl">
+                <div className="text-[11px] font-bold text-slate-400 uppercase">Active Cases</div>
+                <div className="text-2xl font-black text-amber-400 font-mono">{kpiActiveCases}</div>
               </div>
-
-              {/* 4. Completed Cases */}
-              <div
-                onClick={() => {
-                  setCaseStatusFilter('COMPLETED');
-                  setActiveTab('CASES');
-                }}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl shadow-lg hover:shadow-emerald-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-emerald-300 transition uppercase tracking-wider">
-                    Completed Cases
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-110 transition">
-                    <CheckCircle2 className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono tracking-tight">
-                    {kpiCompletedCases}
-                  </div>
-                  <div className="text-[10px] text-emerald-400/90 font-medium pt-1 flex items-center gap-1">
-                    <span>Delivered & archived</span>
-                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
+              <div onClick={() => setActiveTab('CASES')} className="cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 p-4 rounded-2xl">
+                <div className="text-[11px] font-bold text-slate-400 uppercase">Completed</div>
+                <div className="text-2xl font-black text-emerald-400 font-mono">{kpiCompletedCases}</div>
               </div>
-
-              {/* 5. Pending Cases */}
-              <div
-                onClick={() => {
-                  setCaseStatusFilter('APPROVAL');
-                  setActiveTab('CASES');
-                }}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 p-4 rounded-2xl shadow-lg hover:shadow-cyan-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-cyan-300 transition uppercase tracking-wider">
-                    Pending Cases
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:scale-110 transition">
-                    <Hourglass className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-cyan-400 font-mono tracking-tight">
-                    {kpiPendingCases}
-                  </div>
-                  <div className="text-[10px] text-cyan-400/90 font-medium pt-1 flex items-center gap-1">
-                    <span>Pending action/approval</span>
-                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 6. Total Revenue */}
-              <div
-                onClick={() => setActiveTab('PAYMENTS')}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl shadow-lg hover:shadow-emerald-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-emerald-300 transition uppercase tracking-wider">
-                    Total Revenue
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-110 transition">
-                    <TrendingUp className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono tracking-tight">
-                    ₹{kpiTotalRevenue.toLocaleString('en-IN')}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium pt-1 flex items-center gap-1">
-                    <span>Gross settled revenue</span>
-                    <ChevronRight className="w-3 h-3 text-emerald-400 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 7. Today's Revenue */}
-              <div
-                onClick={() => setActiveTab('PAYMENTS')}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-indigo-500/50 p-4 rounded-2xl shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-indigo-300 transition uppercase tracking-wider">
-                    Today's Revenue
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 group-hover:scale-110 transition">
-                    <Calendar className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-black text-indigo-300 font-mono tracking-tight">
-                    ₹{kpiTodayRevenue.toLocaleString('en-IN')}
-                  </div>
-                  <div className="text-[10px] text-indigo-400/90 font-medium pt-1 flex items-center gap-1">
-                    <span>Today's collected receipts</span>
-                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 8. Pending Payments */}
-              <div
-                onClick={() => setActiveTab('PAYMENTS')}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl shadow-lg hover:shadow-amber-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-amber-300 transition uppercase tracking-wider">
-                    Pending Payments
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-110 transition">
-                    <Receipt className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-amber-400 font-mono tracking-tight">
-                    {kpiPendingPayments}
-                  </div>
-                  <div className="text-[10px] text-amber-400/90 font-medium pt-1 flex items-center gap-1">
-                    <span>₹{kpiPendingPaymentsAmount.toLocaleString('en-IN')} pending balance</span>
-                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 9. Total Customers */}
-              <div
-                onClick={() => setActiveTab('CUSTOMERS')}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl shadow-lg hover:shadow-purple-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-purple-300 transition uppercase tracking-wider">
-                    Total Customers
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:scale-110 transition">
-                    <Users className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-purple-300 font-mono tracking-tight">
-                    {kpiTotalCustomers}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium pt-1 flex items-center gap-1">
-                    <span>Clinics & dental labs</span>
-                    <ChevronRight className="w-3 h-3 text-purple-400 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 10. Active Designers */}
-              <div
-                onClick={() => setActiveTab('DESIGNERS')}
-                className="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 p-4 rounded-2xl shadow-lg hover:shadow-cyan-500/10 transition-all duration-200 flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between pb-2">
-                  <span className="text-[11px] font-bold text-slate-400 group-hover:text-cyan-300 transition uppercase tracking-wider">
-                    Active Designers
-                  </span>
-                  <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:scale-110 transition">
-                    <UserCheck className="w-4 h-4" />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-black text-cyan-300 font-mono tracking-tight">
-                    {kpiActiveDesigners}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium pt-1 flex items-center gap-1">
-                    <span>CAD Specialists on duty</span>
-                    <ChevronRight className="w-3 h-3 text-cyan-400 opacity-0 group-hover:opacity-100 transition" />
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Operational Overview & Quick Dispatch Controls */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
-                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-purple-400" />
-                  Administrative Quick Actions
-                </h3>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <button
-                    onClick={() => setCaseModal({ open: true, editingCase: null })}
-                    className="p-3 bg-purple-950/40 hover:bg-purple-900/40 border border-purple-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
-                  >
-                    <div className="font-bold text-purple-300 group-hover:text-purple-200 transition flex items-center gap-1.5">
-                      <FolderPlus className="w-3.5 h-3.5" />
-                      <span>+ New CAD Case</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">Add & dispatch case</div>
-                  </button>
-
-                  <button
-                    onClick={() => setCustomerModal({ open: true, editingCustomer: null })}
-                    className="p-3 bg-blue-950/40 hover:bg-blue-900/40 border border-blue-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
-                  >
-                    <div className="font-bold text-blue-300 group-hover:text-blue-200 transition flex items-center gap-1.5">
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>+ Add Customer</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">Doctor or clinic account</div>
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
-                    className="p-3 bg-cyan-950/40 hover:bg-cyan-900/40 border border-cyan-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
-                  >
-                    <div className="font-bold text-cyan-300 group-hover:text-cyan-200 transition flex items-center gap-1.5">
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>+ Add Designer</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">CAD specialist team</div>
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'STAFF' })}
-                    className="p-3 bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-800/40 rounded-xl font-semibold text-slate-300 text-left transition group"
-                  >
-                    <div className="font-bold text-emerald-300 group-hover:text-emerald-200 transition flex items-center gap-1.5">
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>+ Add Staff</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">Technicians & admins</div>
-                  </button>
-                </div>
-              </div>
-
-              {/* Case Status Distribution */}
-              <div className="lg:col-span-2 bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
-                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center justify-between">
-                  <span>CAD Workflow Status Breakdown</span>
-                  <span className="text-xs text-slate-400 font-normal">{cases.length} Total Processed</span>
-                </h3>
-
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center text-xs">
-                  <div
-                    onClick={() => {
-                      setCaseStatusFilter('NEW');
-                      setActiveTab('CASES');
-                    }}
-                    className="p-3 bg-slate-950 hover:bg-slate-800/80 cursor-pointer rounded-xl border border-slate-800 transition"
-                  >
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">NEW</div>
-                    <div className="text-lg font-black text-rose-400 font-mono">{cases.filter(c => c.status === 'NEW').length}</div>
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      setCaseStatusFilter('ASSIGNED');
-                      setActiveTab('CASES');
-                    }}
-                    className="p-3 bg-slate-950 hover:bg-slate-800/80 cursor-pointer rounded-xl border border-slate-800 transition"
-                  >
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">ASSIGNED</div>
-                    <div className="text-lg font-black text-purple-400 font-mono">{cases.filter(c => c.status === 'ASSIGNED').length}</div>
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      setCaseStatusFilter('IN_DESIGN');
-                      setActiveTab('CASES');
-                    }}
-                    className="p-3 bg-slate-950 hover:bg-slate-800/80 cursor-pointer rounded-xl border border-slate-800 transition"
-                  >
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">IN DESIGN</div>
-                    <div className="text-lg font-black text-amber-400 font-mono">{cases.filter(c => c.status === 'IN_DESIGN').length}</div>
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      setCaseStatusFilter('APPROVAL');
-                      setActiveTab('CASES');
-                    }}
-                    className="p-3 bg-slate-950 hover:bg-slate-800/80 cursor-pointer rounded-xl border border-slate-800 transition"
-                  >
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">APPROVAL</div>
-                    <div className="text-lg font-black text-cyan-400 font-mono">{cases.filter(c => c.status === 'APPROVAL').length}</div>
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      setCaseStatusFilter('COMPLETED');
-                      setActiveTab('CASES');
-                    }}
-                    className="p-3 bg-slate-950 hover:bg-slate-800/80 cursor-pointer rounded-xl border border-slate-800 transition"
-                  >
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">DELIVERED</div>
-                    <div className="text-lg font-black text-emerald-400 font-mono">{cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length}</div>
-                  </div>
-                </div>
+              <div onClick={() => setActiveTab('CUSTOMERS')} className="cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 p-4 rounded-2xl">
+                <div className="text-[11px] font-bold text-slate-400 uppercase">Total Customers</div>
+                <div className="text-2xl font-black text-purple-300 font-mono">{kpiTotalCustomers}</div>
               </div>
             </div>
-
           </div>
         );
       })()}
@@ -1108,23 +688,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                 placeholder="Search ID, Doctor, Patient..."
                 className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
               />
-
-              <select
-                value={caseStatusFilter}
-                onChange={e => setCaseStatusFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
-              >
-                <option value="ALL">All Statuses ({cases.length})</option>
-                <option value="NEW">NEW</option>
-                <option value="RECEIVED">RECEIVED</option>
-                <option value="ASSIGNED">ASSIGNED</option>
-                <option value="IN_DESIGN">IN_DESIGN</option>
-                <option value="QC">QC</option>
-                <option value="APPROVAL">APPROVAL</option>
-                <option value="REVISION">REVISION</option>
-                <option value="COMPLETED">COMPLETED</option>
-                <option value="DELIVERED">DELIVERED</option>
-              </select>
             </div>
           </div>
 
@@ -1138,7 +701,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   <th className="py-3 px-2">Service & Units</th>
                   <th className="py-3 px-2">Assigned CAD Designer</th>
                   <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2">Payment</th>
                   <th className="py-3 px-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1153,7 +715,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                     <td className="py-3 px-2 text-slate-300 font-medium">{c.patientName}</td>
                     <td className="py-3 px-2">
                       <span className="font-semibold text-cyan-300">{c.serviceName}</span>
-                      <span className="text-slate-400 text-[10px] block">({c.unitsQuantity || 1} units • {c.teethNumbers?.join(', ') || 'General'})</span>
+                      <span className="text-slate-400 text-[10px] block">({c.unitsQuantity || 1} units)</span>
                     </td>
                     <td className="py-3 px-2">
                       {c.assignedDesignerName ? (
@@ -1169,37 +731,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                         {c.status}
                       </span>
                     </td>
-                    <td className="py-3 px-2">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                        c.paymentStatus === 'PAID' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-                      }`}>
-                        {c.paymentStatus}
-                      </span>
-                    </td>
                     <td className="py-3 px-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setInspectCase(c)}
-                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-semibold text-[11px] border border-slate-700 transition"
-                          title="Inspect Details & Workflow Timeline"
-                        >
-                          Inspect
-                        </button>
-                        <button
-                          onClick={() => {
-                            setStatusModal({
-                              open: true,
-                              caseId: c.id,
-                              currentStatus: c.status,
-                              newStatus: c.status,
-                              comment: ''
-                            });
-                          }}
-                          className="px-2 py-1 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/40 rounded-lg font-semibold text-[11px] transition"
-                          title="Transition Status & Record History"
-                        >
-                          Status
-                        </button>
                         <button
                           onClick={() => {
                             setAssignModal({ open: true, caseId: c.id });
@@ -1210,16 +743,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                           Assign
                         </button>
                         <button
-                          onClick={() => setCaseModal({ open: true, editingCase: c })}
-                          className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Edit Case Details"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
                           onClick={() => handleDeleteCase(c)}
                           className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Delete Case"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1256,7 +781,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                 type="text"
                 value={customerSearch}
                 onChange={e => setCustomerSearch(e.target.value)}
-                placeholder="Search by name, clinic, email, phone..."
+                placeholder="Search by name, clinic, email..."
                 className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
               />
             </div>
@@ -1270,7 +795,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   <th className="py-3 px-2">Clinic / Lab Facility</th>
                   <th className="py-3 px-2">Contact Details</th>
                   <th className="py-3 px-2">Total Cases</th>
-                  <th className="py-3 px-2">Active Cases</th>
                   <th className="py-3 px-2">Lifetime Billed</th>
                   <th className="py-3 px-2">Status</th>
                   <th className="py-3 px-2 text-right">Actions</th>
@@ -1289,7 +813,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                       <div className="text-[10px] text-slate-500">{cust.phone || 'N/A'}</div>
                     </td>
                     <td className="py-3 px-2 font-mono font-bold text-purple-300">{cust.totalCasesCount || 0}</td>
-                    <td className="py-3 px-2 font-mono font-bold text-amber-300">{cust.activeCasesCount || 0}</td>
                     <td className="py-3 px-2 font-mono font-bold text-emerald-400">₹{(cust.totalSpent || 0).toLocaleString()}</td>
                     <td className="py-3 px-2">
                       <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
@@ -1301,14 +824,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                         <button
                           onClick={() => setCustomerModal({ open: true, editingCustomer: cust })}
                           className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Edit Customer Profile"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteCustomer(cust)}
                           className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Delete Customer Account"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1348,7 +869,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   <th className="py-3 px-2">Employee Name</th>
                   <th className="py-3 px-2">Work Email</th>
                   <th className="py-3 px-2">Role</th>
-                  <th className="py-3 px-2">Phone</th>
                   <th className="py-3 px-2">Status</th>
                   <th className="py-3 px-2 text-right">Actions</th>
                 </tr>
@@ -1363,60 +883,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                         {emp.role}
                       </span>
                     </td>
-                    <td className="py-3 px-2 text-slate-400">{emp.phone || 'N/A'}</td>
                     <td className="py-3 px-2">
-                      {emp.isActive !== false ? (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold">
-                          Inactive
-                        </span>
-                      )}
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                        {emp.isActive !== false ? 'Active' : 'Inactive'}
+                      </span>
                     </td>
                     <td className="py-3 px-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => handleToggleEmployeeStatus(emp)}
-                          className={`p-1.5 rounded-lg border text-xs font-semibold transition ${
-                            emp.isActive !== false
-                              ? 'bg-slate-800 hover:bg-amber-600/30 hover:text-amber-300 text-slate-300 border-slate-700'
-                              : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border-emerald-800'
-                          }`}
-                          title={emp.isActive !== false ? 'Deactivate Account' : 'Activate Account'}
-                        >
-                          {emp.isActive !== false ? <ToggleRight className="w-3.5 h-3.5 text-emerald-400" /> : <ToggleLeft className="w-3.5 h-3.5 text-rose-400" />}
-                        </button>
-                        <button
                           onClick={async () => {
-                            const newPass = prompt(`Set new custom password for ${emp.name}:`, '');
+                            const newPass = prompt(`Set new password for ${emp.name}:`, '');
                             if (newPass && newPass.trim()) {
-                              try {
-                                await api.adminResetUserPassword(emp.id, newPass.trim(), false);
-                                alert(`Password successfully updated for ${emp.name}!`);
-                                fetchAllData();
-                              } catch (err: any) {
-                                alert(err.message || 'Failed to update password');
-                              }
+                              await api.adminResetUserPassword(emp.id, newPass.trim(), false);
+                              alert(`Password updated for ${emp.name}!`);
+                              fetchAllData();
                             }
                           }}
                           className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Reset Password"
                         >
                           <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
                         </button>
                         <button
-                          onClick={() => setEmployeeModal({ open: true, editingEmployee: emp, defaultRole: emp.role })}
-                          className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Edit Employee"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
                           onClick={() => handleDeleteEmployee(emp, false)}
                           className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                          title="Delete Employee Account"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1431,11 +920,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       )}
 
       {/* ========================================================================= */}
-      {/* 5. DESIGNERS TAB (Enhanced: All, Active Online, and Offline Filters) */}
+      {/* 5. DESIGNERS TAB */}
       {/* ========================================================================= */}
       {activeTab === 'DESIGNERS' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
-          {/* Header with Stats & Filter Tabs */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
               <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -1444,317 +932,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
               </h2>
               <p className="text-xs text-slate-400 mt-1">
                 Total Designers: <strong className="text-slate-200 font-mono">{designers.length}</strong> | 
-                Active Online: <strong className="text-emerald-400 font-mono">{designers.filter(d => d.isActive !== false).length}</strong> | 
-                Offline: <strong className="text-slate-400 font-mono">{designers.filter(d => d.isActive === false).length}</strong>
+                Active Online: <strong className="text-emerald-400 font-mono">{designers.filter(d => d.isActive !== false).length}</strong>
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Status Filter Tabs: ALL, ACTIVE, OFFLINE */}
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setDesignerStatusFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    designerStatusFilter === 'ALL'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  All ({designers.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDesignerStatusFilter('ACTIVE')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    designerStatusFilter === 'ACTIVE'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Active ({designers.filter(d => d.isActive !== false).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDesignerStatusFilter('OFFLINE')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    designerStatusFilter === 'OFFLINE'
-                      ? 'bg-slate-700 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Offline ({designers.filter(d => d.isActive === false).length})
-                </button>
-              </div>
-
-              <button
-                onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
-                className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>+ Add CAD Designer</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Designer Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredDesigners.map(d => {
-              const isOnline = d.isActive !== false;
-              const activeCount = cases.filter(c => c.assignedDesignerId === d.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-              const completedCount = cases.filter(c => c.assignedDesignerId === d.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-
-              return (
-                <div 
-                  key={d.id} 
-                  className={`p-5 rounded-2xl border transition space-y-3 flex flex-col justify-between ${
-                    isOnline 
-                      ? 'bg-slate-950 border-slate-800 hover:border-slate-700' 
-                      : 'bg-slate-950/50 border-slate-800/60 opacity-80'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    {/* Header: Name, Email & Status Badge */}
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <div className="font-bold text-slate-100 text-sm">{d.name}</div>
-                        <div className="text-[11px] text-purple-400 font-mono">{d.email}</div>
-                      </div>
-                      
-                      {/* Interactive Active / Offline Toggle Badge */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEmployeeStatus(d)}
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition flex items-center gap-1 ${
-                          isOnline
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
-                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-                        }`}
-                        title="Click to toggle Active (Online) / Offline"
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                        <span>{isOnline ? 'ACTIVE' : 'OFFLINE'}</span>
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] text-slate-400">
-                      <span className="font-semibold text-slate-300">Specialization: </span>
-                      {d.specialization || 'Full Contour Zirconia & Implants'}
-                    </div>
-
-                    {/* Workload Stats */}
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-center">
-                      <div className="p-2 bg-slate-900 rounded-xl">
-                        <div className="text-[10px] text-slate-400 uppercase font-bold">In Design</div>
-                        <div className="text-base font-black text-amber-400 font-mono">{activeCount}</div>
-                      </div>
-                      <div className="p-2 bg-slate-900 rounded-xl">
-                        <div className="text-[10px] text-slate-400 uppercase font-bold">Completed</div>
-                        <div className="text-base font-black text-emerald-400 font-mono">{completedCount}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card Action Controls */}
-                  <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-800/80">
-                    <button
-                      onClick={async () => {
-                        const newPass = prompt(`Set new custom password for ${d.name}:`, '');
-                        if (newPass && newPass.trim()) {
-                          try {
-                            await api.adminResetUserPassword(d.id, newPass.trim(), false);
-                            alert(`Password successfully updated for ${d.name}!`);
-                            fetchAllData();
-                          } catch (err: any) {
-                            alert(err.message || 'Failed to update password');
-                          }
-                        }
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-800 transition"
-                      title="Set Custom Password"
-                    >
-                      <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Password</span>
-                    </button>
-                    <button
-                      onClick={() => setEmployeeModal({ open: true, editingEmployee: d, defaultRole: 'DESIGNER_EMPLOYEE' })}
-                      className="p-1.5 bg-slate-900 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-800 transition"
-                      title="Edit Designer Profile"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteEmployee(d, true)}
-                      className="p-1.5 bg-slate-900 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-800 transition"
-                      title="Delete Designer Account"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 6. PRICING & SERVICES TAB */}
-      {/* ========================================================================= */}
-      {(activeTab === 'PRICING_SERVICES' || activeTab === 'SERVICES' || activeTab === 'PRICING' || activeTab === 'OFFERS') && (
-        <AdminPricingManagement
-          initialSubTab={
-            activeTab === 'OFFERS'
-              ? 'OFFERS'
-              : activeTab === 'PRICING'
-              ? 'TAX_SETTINGS'
-              : 'ALL_SERVICES'
-          }
-        />
-      )}
-
-      {/* ========================================================================= */}
-      {/* 7. PAYMENTS TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'PAYMENTS' && (
-        <div className="space-y-6">
-          <PaymentTransactionsLedger />
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 8. INVOICES TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'INVOICES' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="pb-4 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-slate-100">Itemized GST Tax Invoices Ledger</h2>
-            <p className="text-xs text-slate-400">Audit-ready billing statements with GST breakups, discounts, and payment receipts</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
-                  <th className="py-3 px-2">Invoice No</th>
-                  <th className="py-3 px-2">Case ID</th>
-                  <th className="py-3 px-2">Customer</th>
-                  <th className="py-3 px-2">Subtotal</th>
-                  <th className="py-3 px-2">GST (18%)</th>
-                  <th className="py-3 px-2">Total Amount</th>
-                  <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {invoices.map(inv => (
-                  <tr key={inv.id} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3 px-2 font-mono font-bold text-cyan-400">{inv.invoiceNumber}</td>
-                    <td className="py-3 px-2 font-mono text-purple-300">{inv.caseId}</td>
-                    <td className="py-3 px-2 text-slate-200 font-medium">{inv.customerName}</td>
-                    <td className="py-3 px-2 font-mono text-slate-300">₹{inv.subtotal?.toLocaleString()}</td>
-                    <td className="py-3 px-2 font-mono text-slate-400">₹{inv.taxAmount?.toLocaleString()}</td>
-                    <td className="py-3 px-2 font-mono font-bold text-emerald-400">₹{inv.finalTotalAmount?.toLocaleString()}</td>
-                    <td className="py-3 px-2">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        inv.status === 'PAID' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-                      }`}>
-                        {inv.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2 text-right">
-                      <button
-                        onClick={() => setSelectedInvoice(inv)}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-semibold text-[11px] flex items-center gap-1 ml-auto"
-                      >
-                        <Eye className="w-3 h-3 text-cyan-400" />
-                        <span>View Statement</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 9. FILES TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'FILES' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="pb-4 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-slate-100">Private CAD STL & Scan Files Repository</h2>
-            <p className="text-xs text-slate-400">Gated download security, file checksums, and cloud storage pointers</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
-                  <th className="py-3 px-2">File Name</th>
-                  <th className="py-3 px-2">Case ID</th>
-                  <th className="py-3 px-2">File Type</th>
-                  <th className="py-3 px-2">Size</th>
-                  <th className="py-3 px-2">Downloads</th>
-                  <th className="py-3 px-2">Gated Access</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filesCatalog.map(f => (
-                  <tr key={f.id} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3 px-2 font-mono font-medium text-slate-200">{f.originalName || f.fileName}</td>
-                    <td className="py-3 px-2 font-mono text-purple-300">{f.caseId}</td>
-                    <td className="py-3 px-2">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono text-[10px]">
-                        {f.fileType}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2 font-mono text-slate-400">{Math.round((f.sizeBytes || 0) / 1024 / 1024 * 10) / 10} MB</td>
-                    <td className="py-3 px-2 font-mono text-slate-300">{f.downloadCount || 0}</td>
-                    <td className="py-3 px-2">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                        SECURED
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 10. NOTIFICATIONS TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'NOTIFICATIONS' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex justify-between items-center pb-4 border-b border-slate-800">
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">Dispatched Alerts & Customer Communications</h2>
-              <p className="text-xs text-slate-400">SMS, Email, and in-app triggers dispatched on case status changes</p>
-            </div>
             <button
-              onClick={() => setBroadcastModal(true)}
-              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+              onClick={() => setEmployeeModal({ open: true, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
+              className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
             >
-              <Send className="w-4 h-4" />
-              <span>Broadcast New Message</span>
+              <UserPlus className="w-4 h-4" />
+              <span>+ Add CAD Designer</span>
             </button>
           </div>
 
-          <div className="space-y-3">
-            {notifications.map(n => (
-              <div key={n.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex items-start gap-3 text-xs">
-                <Bell className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                <div className="flex-1 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-200">{n.title}</span>
-                    <span className="text-[10px] text-slate-500">{new Date(n.createdAt).toLocaleString()}</span>
-                  </div>
-                  <p className="text-slate-400">{n.message}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredDesigners.map(d => (
+              <div key={d.id} className="p-5 rounded-2xl border bg-slate-950 border-slate-800 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="font-bold text-slate-100 text-sm">{d.name}</div>
+                  <div className="text-[11px] text-purple-400 font-mono">{d.email}</div>
+                  <div className="text-[11px] text-slate-400 mt-1">{d.specialization}</div>
+                </div>
+
+                <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-800">
+                  <button
+                    onClick={async () => {
+                      const newPass = prompt(`Set password for ${d.name}:`, '');
+                      if (newPass && newPass.trim()) {
+                        await api.adminResetUserPassword(d.id, newPass.trim(), false);
+                        alert(`Password updated for ${d.name}!`);
+                        fetchAllData();
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-800"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Password</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteEmployee(d, true)}
+                    className="p-1.5 bg-slate-900 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-800"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -1762,411 +982,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 11. REPORTS TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'REPORTS' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-1">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">Average Turnaround SLA</div>
-              <div className="text-2xl font-black text-cyan-400 font-mono">18.4 Hours</div>
-              <div className="text-[10px] text-slate-500">99.2% Standard Delivery Compliance</div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-1">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">First-Pass Clinical Approval</div>
-              <div className="text-2xl font-black text-emerald-400 font-mono">98.7%</div>
-              <div className="text-[10px] text-slate-500">&lt;1.3% Clinical Revision Requests</div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-1">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">Active Doctor Accounts</div>
-              <div className="text-2xl font-black text-purple-400 font-mono">{customers.length}</div>
-              <div className="text-[10px] text-slate-500">Pan-India Clinical Coverage</div>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-100">Monthly Operational Billing Volume</h3>
-            <div className="space-y-3">
-              {(reportsData?.monthlyTrends || [
-                { month: 'Apr 2026', cases: 42, revenue: 38500 },
-                { month: 'May 2026', cases: 68, revenue: 59200 },
-                { month: 'Jun 2026', cases: 94, revenue: 84300 },
-                { month: 'Jul 2026', cases: 128, revenue: 118400 },
-                { month: 'Aug 2026 (MTD)', cases: cases.length, revenue: analytics?.totalRevenueINR || 16400 }
-              ]).map((m: any, idx: number) => (
-                <div key={idx} className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-200">{m.month}</span>
-                  <div className="flex gap-6 font-mono">
-                    <span className="text-slate-400">{m.cases} Cases</span>
-                    <span className="text-emerald-400 font-bold">₹{m.revenue.toLocaleString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 12. SEO TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'SEO' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5 text-xs text-slate-100">
-          <div className="pb-4 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-slate-100">Search Engine Optimization (SEO) & OpenGraph</h2>
-            <p className="text-xs text-slate-400">Search ranking meta titles, robot tags, and official contact metadata</p>
-          </div>
-
-          {seoSaveMsg && (
-            <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{seoSaveMsg}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSaveSeo} className="space-y-4 max-w-2xl">
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">Global Site Meta Title</label>
-              <input
-                type="text"
-                value={seoForm.siteTitle}
-                onChange={e => setSeoForm({ ...seoForm, siteTitle: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">Meta Description</label>
-              <textarea
-                rows={3}
-                value={seoForm.metaDescription}
-                onChange={e => setSeoForm({ ...seoForm, metaDescription: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">Target SEO Keywords (Comma-separated)</label>
-              <input
-                type="text"
-                value={seoForm.keywords}
-                onChange={e => setSeoForm({ ...seoForm, keywords: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Support Phone</label>
-                <input
-                  type="text"
-                  value={seoForm.contactPhone}
-                  onChange={e => setSeoForm({ ...seoForm, contactPhone: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Support Email</label>
-                <input
-                  type="email"
-                  value={seoForm.contactEmail}
-                  onChange={e => setSeoForm({ ...seoForm, contactEmail: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
-            >
-              Save SEO Configuration
-            </button>
-          </form>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 13. STORAGE TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'STORAGE' && (
-        <div className="space-y-6">
-          <PaymentStorageSettings />
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 14. SETTINGS TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'SETTINGS' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 text-xs text-slate-100">
-          <div className="pb-4 border-b border-slate-800">
-            <h2 className="text-lg font-bold text-slate-100">Global Platform Parameters & Official Identity</h2>
-            <p className="text-xs text-slate-400">Headquarters address, support hotline, social media, and billing tax rates</p>
-          </div>
-
-          {settingsSaveMsg && (
-            <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{settingsSaveMsg}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSaveSettings} className="space-y-4 max-w-3xl">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Official Support Email</label>
-                <input
-                  type="email"
-                  value={settingsForm.supportEmail}
-                  onChange={e => setSettingsForm({ ...settingsForm, supportEmail: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Official Support Phone</label>
-                <input
-                  type="text"
-                  value={settingsForm.supportPhone}
-                  onChange={e => setSettingsForm({ ...settingsForm, supportPhone: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">Clinical CAD Office Address</label>
-              <input
-                type="text"
-                value={settingsForm.supportAddress}
-                onChange={e => setSettingsForm({ ...settingsForm, supportAddress: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
-              />
-            </div>
-
-            {/* Dynamic Tax Configuration Card */}
-            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                    <span>Tax & Invoicing Regulatory Parameters</span>
-                    {settingsForm.taxEnabled ? (
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Active</span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Disabled</span>
-                    )}
-                  </h3>
-                  <p className="text-[11px] text-slate-400">Configure tax designation name, percentage rate, and whether tax is enabled during case pricing.</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settingsForm.taxEnabled}
-                    onChange={e => setSettingsForm({ ...settingsForm, taxEnabled: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Official Tax Name / Label</label>
-                  <input
-                    type="text"
-                    value={settingsForm.taxName}
-                    onChange={e => setSettingsForm({ ...settingsForm, taxName: e.target.value })}
-                    placeholder="e.g. GST (Goods & Services Tax) or VAT"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Tax Percentage (%)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.5"
-                      value={settingsForm.taxPercent ?? settingsForm.taxGstPercent ?? 18}
-                      onChange={e => {
-                        const val = Number(e.target.value);
-                        setSettingsForm({
-                          ...settingsForm,
-                          taxPercent: val,
-                          taxGstPercent: val
-                        });
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 font-mono font-bold"
-                    />
-                    <span className="absolute right-3.5 top-2.5 text-slate-400 font-bold">%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Real-time Calculation Simulation */}
-              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="text-slate-400">
-                  Calculation preview for ₹1,000 case:
-                </span>
-                <div className="font-mono text-slate-300 flex items-center gap-2">
-                  <span>Subtotal: ₹1,000</span>
-                  <span>+</span>
-                  <span className={settingsForm.taxEnabled ? 'text-purple-300 font-bold' : 'text-slate-500 line-through'}>
-                    {settingsForm.taxName || 'Tax'} ({settingsForm.taxEnabled ? (settingsForm.taxPercent ?? settingsForm.taxGstPercent ?? 18) : 0}%): ₹
-                    {settingsForm.taxEnabled ? Math.round(1000 * ((settingsForm.taxPercent ?? settingsForm.taxGstPercent ?? 18) / 100)) : 0}
-                  </span>
-                  <span>=</span>
-                  <span className="text-white font-bold bg-purple-950 border border-purple-800 px-2 py-0.5 rounded">
-                    Total: ₹{settingsForm.taxEnabled ? (1000 + Math.round(1000 * ((settingsForm.taxPercent ?? settingsForm.taxGstPercent ?? 18) / 100))).toLocaleString() : '1,000'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">Default Settlement Currency</label>
-              <input
-                type="text"
-                value={settingsForm.defaultCurrency}
-                onChange={e => setSettingsForm({ ...settingsForm, defaultCurrency: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 font-mono uppercase max-w-xs"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="submit"
-                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
-              >
-                Update Platform & Tax Settings
-              </button>
-            </div>
-          </form>
-
-          {/* Admin Session Security & Logout Card */}
-          <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-5 mt-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-purple-400" />
-                  Admin Account Session & Security
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  Active Administrator: <strong className="text-slate-200">{user?.name}</strong> ({user?.email}) • Authorization Role:{' '}
-                  <span className="text-purple-300 font-mono font-bold">{user?.role}</span>
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                disabled={loggingOut}
-                className="px-4 py-2.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 hover:border-rose-500/70 text-rose-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-sm"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>{loggingOut ? 'Signing Out...' : 'Sign Out of Admin Session'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 15. AUDIT LOGS TAB */}
-      {/* ========================================================================= */}
-      {activeTab === 'AUDIT_LOGS' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">System Security & Immutable Audit Trail</h2>
-              <p className="text-xs text-slate-400">Timestamped record of administrative actions, password resets, and file downloads</p>
-            </div>
-            <input
-              type="text"
-              value={auditSearch}
-              onChange={e => setAuditSearch(e.target.value)}
-              placeholder="Search audit trail..."
-              className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
-                  <th className="py-2.5 px-2">Timestamp</th>
-                  <th className="py-2.5 px-2">Actor / User</th>
-                  <th className="py-2.5 px-2">Action</th>
-                  <th className="py-2.5 px-2">Details</th>
-                  <th className="py-2.5 px-2">Result</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {filteredAuditLogs.map(a => (
-                  <tr key={a.id} className="hover:bg-slate-800/40">
-                    <td className="py-2.5 px-2 text-slate-400">{new Date(a.timestamp).toLocaleString()}</td>
-                    <td className="py-2.5 px-2 text-purple-300 font-semibold">{a.userName}</td>
-                    <td className="py-2.5 px-2 text-cyan-300 font-bold">{a.action}</td>
-                    <td className="py-2.5 px-2 text-slate-300 font-sans">{a.details}</td>
-                    <td className="py-2.5 px-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                        a.result === 'SUCCESS' ? 'text-emerald-400 bg-emerald-950/60' : 'text-amber-400 bg-amber-950/60'
-                      }`}>
-                        {a.result || 'OK'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODALS */}
-      {/* ========================================================================= */}
-
-      {/* Assign Designer Modal */}
+      {/* Modals */}
       {assignModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-slate-100 shadow-2xl space-y-4">
             <h3 className="text-base font-bold">Assign CAD Designer to Case</h3>
             <form onSubmit={handleAssignSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Select CAD Technician</label>
-                <select
-                  value={selectedDesignerId}
-                  onChange={e => setSelectedDesignerId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
-                >
-                  {designers.map(d => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} ({d.email}) {d.isActive === false ? '[OFFLINE]' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+              <select
+                value={selectedDesignerId}
+                onChange={e => setSelectedDesignerId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
+              >
+                {designers.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.email})
+                  </option>
+                ))}
+              </select>
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAssignModal({ open: false, caseId: '' })}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl font-semibold"
-                >
+                <button type="button" onClick={() => setAssignModal({ open: false, caseId: '' })} className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow"
-                >
+                <button type="submit" className="px-4 py-1.5 bg-purple-600 text-white font-bold rounded-xl">
                   Confirm Assignment
                 </button>
               </div>
@@ -2175,417 +1012,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         </div>
       )}
 
-      {/* Create Staff Modal */}
-      {createStaffModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-3 text-xs">
-            <h3 className="text-base font-bold mb-2">Create Staff Account</h3>
-            <form onSubmit={handleCreateStaff} className="space-y-3">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newStaffData.name}
-                  onChange={e => setNewStaffData({ ...newStaffData, name: e.target.value })}
-                  placeholder="Rahul Verma"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Work Email</label>
-                <input
-                  type="email"
-                  required
-                  value={newStaffData.email}
-                  onChange={e => setNewStaffData({ ...newStaffData, email: e.target.value })}
-                  placeholder="rahul.designer@crowndesk.in"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Initial Temporary Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newStaffData.password}
-                  onChange={e => setNewStaffData({ ...newStaffData, password: e.target.value })}
-                  placeholder="Min 6 chars"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Role</label>
-                <select
-                  value={newStaffData.role}
-                  onChange={e => setNewStaffData({ ...newStaffData, role: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                >
-                  <option value="DESIGNER_EMPLOYEE">CAD Designer (Employee)</option>
-                  <option value="ADMIN">Operations Admin</option>
-                  <option value="SUPER_ADMIN">Super Administrator</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateStaffModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow"
-                >
-                  Create Account
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Create Service Modal */}
-      {createServiceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-3 text-xs">
-            <h3 className="text-base font-bold mb-2">Add Dental CAD Service</h3>
-            <form onSubmit={handleCreateService} className="space-y-3">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Service Code (e.g. SPLINT-CAD)</label>
-                <input
-                  type="text"
-                  required
-                  value={newServiceData.code}
-                  onChange={e => setNewServiceData({ ...newServiceData, code: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100 font-mono uppercase"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Service Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newServiceData.name}
-                  onChange={e => setNewServiceData({ ...newServiceData, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Price (₹ INR)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newServiceData.unitPriceINR}
-                    onChange={e => setNewServiceData({ ...newServiceData, unitPriceINR: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Price ($ USD)</label>
-                  <input
-                    type="number"
-                    required
-                    value={newServiceData.unitPriceUSD}
-                    onChange={e => setNewServiceData({ ...newServiceData, unitPriceUSD: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Description</label>
-                <textarea
-                  rows={2}
-                  value={newServiceData.description}
-                  onChange={e => setNewServiceData({ ...newServiceData, description: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateServiceModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow"
-                >
-                  Save Service
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Broadcast Modal */}
-      {broadcastModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-3 text-xs">
-            <h3 className="text-base font-bold mb-2">Broadcast System Announcement</h3>
-            <form onSubmit={handleBroadcast} className="space-y-3">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Target Audience</label>
-                <select
-                  value={broadcastData.targetRole}
-                  onChange={e => setBroadcastData({ ...broadcastData, targetRole: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                >
-                  <option value="ALL">All Platform Users (Doctors & Designers)</option>
-                  <option value="DOCTOR_LAB">Doctors & Dental Labs Only</option>
-                  <option value="DESIGNER_EMPLOYEE">CAD Designers Only</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Announcement Title</label>
-                <input
-                  type="text"
-                  required
-                  value={broadcastData.title}
-                  onChange={e => setBroadcastData({ ...broadcastData, title: e.target.value })}
-                  placeholder="System Maintenance or Holiday Update"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Message Content</label>
-                <textarea
-                  rows={3}
-                  required
-                  value={broadcastData.message}
-                  onChange={e => setBroadcastData({ ...broadcastData, message: e.target.value })}
-                  placeholder="Enter details of announcement..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setBroadcastModal(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow"
-                >
-                  Dispatch Announcement
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Invoice Statement Modal */}
-      {selectedInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 text-slate-100 shadow-2xl space-y-4 text-xs">
-            <div className="flex justify-between items-start border-b border-slate-800 pb-3">
-              <div>
-                <div className="font-mono text-purple-400 font-bold">{selectedInvoice.invoiceNumber}</div>
-                <div className="text-sm font-bold text-slate-100">CrownDesk Tax Invoice</div>
-              </div>
-              <button
-                onClick={() => setSelectedInvoice(null)}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-2 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Customer:</span>
-                <span className="font-bold text-slate-200">{selectedInvoice.customerName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Case Reference:</span>
-                <span className="font-mono text-purple-300">{selectedInvoice.caseId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Subtotal:</span>
-                <span className="font-mono">₹{selectedInvoice.subtotal?.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">GST (18% Dental CAD):</span>
-                <span className="font-mono">₹{selectedInvoice.taxAmount?.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between pt-2 border-t border-slate-800 text-sm font-bold">
-                <span className="text-slate-200">Total Billed:</span>
-                <span className="font-mono text-emerald-400">₹{selectedInvoice.finalTotalAmount?.toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow"
-              >
-                <Download className="w-4 h-4" />
-                <span>Print / Download Invoice</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Admin Status Transition & History Logging Modal */}
-      {statusModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-4 text-xs">
-            <div className="flex justify-between items-start border-b border-slate-800 pb-3">
-              <div>
-                <span className="font-mono text-purple-400 font-bold">{statusModal.caseId}</span>
-                <h3 className="text-base font-bold text-slate-100">Transition Case Workflow Status</h3>
-                <p className="text-[11px] text-slate-400">Every transition writes an immutable audit record with previous status, new status, timestamp, user, and comment.</p>
-              </div>
-              <button
-                onClick={() => setStatusModal({ open: false, caseId: '', currentStatus: 'NEW', newStatus: 'NEW', comment: '' })}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleStatusUpdateSubmit} className="space-y-4">
-              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between">
-                <span className="text-slate-400">Current Status:</span>
-                <span className="px-2.5 py-1 rounded-md bg-purple-500/20 text-purple-300 font-mono font-bold">
-                  {statusModal.currentStatus}
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Target Status</label>
-                <select
-                  value={statusModal.newStatus}
-                  onChange={e => setStatusModal({ ...statusModal, newStatus: e.target.value as CaseStatus })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100 focus:outline-none focus:border-purple-500 text-xs"
-                >
-                  <option value="NEW">NEW - Prescription Created</option>
-                  <option value="RECEIVED">RECEIVED - Scans & Data Verified</option>
-                  <option value="ASSIGNED">ASSIGNED - Assigned to CAD Team</option>
-                  <option value="IN_DESIGN">IN_DESIGN - Active Modeling</option>
-                  <option value="QC">QC - Quality Control Review</option>
-                  <option value="APPROVAL">APPROVAL - Doctor 3D Inspection</option>
-                  <option value="REVISION">REVISION - Modifications Required</option>
-                  <option value="COMPLETED">COMPLETED - Approved by Doctor</option>
-                  <option value="DELIVERED">DELIVERED - Final STL Downloaded</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Transition Note / Comment (Logged in Permanent History)</label>
-                <textarea
-                  rows={3}
-                  required
-                  value={statusModal.comment}
-                  onChange={e => setStatusModal({ ...statusModal, comment: e.target.value })}
-                  placeholder="e.g. Design verified with 50µm cement spacer; moving to QC..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100 focus:outline-none focus:border-purple-500 text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStatusModal({ open: false, caseId: '', currentStatus: 'NEW', newStatus: 'NEW', comment: '' })}
-                  className="px-3.5 py-2 bg-slate-800 text-slate-300 rounded-xl font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl shadow transition"
-                >
-                  Commit Status & Log
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Case Inspection & Timeline Modal */}
-      {inspectCase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-4xl w-full p-6 text-slate-100 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start border-b border-slate-800 pb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-purple-400 font-black text-lg">{inspectCase.id}</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    {inspectCase.status}
-                  </span>
-                </div>
-                <div className="text-xs text-slate-400 mt-1">
-                  Doctor: <span className="text-slate-200 font-semibold">{inspectCase.doctorName}</span> • Patient: <span className="text-slate-200 font-semibold">{inspectCase.patientName}</span> • Service: <span className="text-cyan-300 font-semibold">{inspectCase.serviceName}</span>
-                </div>
-              </div>
-              <button
-                onClick={() => setInspectCase(null)}
-                className="text-slate-400 hover:text-slate-200 p-1"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Render Timeline View */}
-            <CaseTimelineView
-              timeline={inspectCase.timeline || []}
-              currentStatus={inspectCase.status}
-            />
-
-            <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-xs">
-              <span className="text-slate-400">Permanent Unique Case Identifier: <strong className="font-mono text-purple-300">{inspectCase.id}</strong></span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const cid = inspectCase.id;
-                    const cstatus = inspectCase.status;
-                    setStatusModal({
-                      open: true,
-                      caseId: cid,
-                      currentStatus: cstatus,
-                      newStatus: cstatus,
-                      comment: ''
-                    });
-                  }}
-                  className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl shadow"
-                >
-                  Change Status
-                </button>
-                <button
-                  onClick={() => setInspectCase(null)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Admin CRUD Modal: Cases */}
       <AdminCaseModal
         isOpen={caseModal.open}
         onClose={() => setCaseModal({ open: false, editingCase: null })}
@@ -2596,7 +1022,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         designers={designers}
       />
 
-      {/* Admin CRUD Modal: Customers */}
       <AdminCustomerModal
         isOpen={customerModal.open}
         onClose={() => setCustomerModal({ open: false, editingCustomer: null })}
@@ -2604,7 +1029,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         editingCustomer={customerModal.editingCustomer}
       />
 
-      {/* Admin CRUD Modal: Employees & Designers */}
       <AdminEmployeeModal
         isOpen={employeeModal.open}
         onClose={() => setEmployeeModal({ open: false, editingEmployee: null, defaultRole: 'DESIGNER_EMPLOYEE' })}
@@ -2614,7 +1038,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         isSuperAdmin={user?.role === 'SUPER_ADMIN'}
       />
 
-      {/* Unified Delete Confirmation Modal */}
       <AdminDeleteConfirmModal
         isOpen={deleteConfirm.open}
         onClose={() => setDeleteConfirm({ open: false, type: 'CASE', id: '', name: '', loading: false })}
