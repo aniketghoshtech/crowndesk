@@ -71,7 +71,7 @@ function sanitizeCaseForRole(caseRec: CaseRecord, role: UserRole | string, reque
   };
 }
 
-// 1. GET /api/cases - Supabase ক্লাউড থেকে রিয়েল-টাইম কেস ফেচ ও সিঙ্ক
+// 1. GET /api/cases - Supabase ক্লাউড থেকে রিয়েল-টাইম কেস ফেচ ও সিঙ্ক
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const user = getAuthenticatedUser(req);
@@ -82,7 +82,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     // সরাসরি Supabase ক্লাউড থেকে সব কেস লোড করা
     try {
-      const { data, error } = await supabase.from('cases').select('*');
+      const { data } = await supabase.from('cases').select('*');
       if (data && data.length > 0) {
         data.forEach((c: any) => {
           const mapped: CaseRecord = {
@@ -124,8 +124,15 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
           };
 
           const local = db.findCaseById(c.id);
-          if (!local) db.addCase(mapped);
-          else Object.assign(local, mapped);
+          if (!local) {
+            db.addCase(mapped);
+          } else {
+            // Supabase-এর লাইভ অ্যাসাইনমেন্ট সবসময় প্রাধান্য পাবে
+            local.assignedDesignerId = mapped.assignedDesignerId;
+            local.assignedDesignerName = mapped.assignedDesignerName;
+            local.status = mapped.status;
+            local.paymentStatus = mapped.paymentStatus;
+          }
         });
       }
     } catch (e) {
@@ -140,7 +147,6 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     } else if (user.role === 'DOCTOR_LAB') {
       permittedCases = allCases.filter(c => c.customerId === user.id || c.customerEmail?.toLowerCase() === user.email.toLowerCase());
     } else {
-      // ডিজাইনার তার নিজের অ্যাসাইন করা কেস এবং দেখার জন্য সব কেস পাবে
       permittedCases = allCases
         .filter(c => c.assignedDesignerId === user.id || c.assignedDesignerId === user.email || c.assignedDesignerName?.toLowerCase() === user.name?.toLowerCase() || !c.assignedDesignerId)
         .map(c => sanitizeCaseForRole(c, user.role, user.id));
@@ -168,14 +174,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       clinicName,
       serviceId,
       serviceName,
-      teeth = [],
       teethNumbers = [],
       material,
       shade,
       instructions,
       priority = 'STANDARD',
-      unitsQuantity = 1,
-      files = []
+      unitsQuantity = 1
     } = req.body;
 
     const newCaseId = db.generateNextCaseId();
@@ -232,10 +236,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       updatedAt: now
     };
 
-    // ১. লোকাল ক্যাশে সেভ
     db.addCase(caseRecord);
 
-    // ২. Supabase ক্লাউডে পারমানেন্ট সেভ
     try {
       await supabase.from('cases').upsert({
         id: caseRecord.id,
@@ -315,7 +317,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// 4. PATCH /api/cases/:id/assign - কেস ডিজাইনার অ্যাসাইন ও ক্লাউড পারমানেন্ট সিঙ্ক
+// 4. PATCH /api/cases/:id/assign - সরাসরি UPSERT দিয়ে ক্লাউডে পারমানেন্ট অ্যাসাইন
 router.patch('/:id/assign', async (req: Request, res: Response): Promise<void> => {
   try {
     const user = getAuthenticatedUser(req);
@@ -352,14 +354,21 @@ router.patch('/:id/assign', async (req: Request, res: Response): Promise<void> =
 
     const allUsers = db.getAllUsers();
     const searchTarget = String(designerId).trim().toLowerCase();
-    const designer = allUsers.find(u => 
+    let designer = allUsers.find(u => 
       u.id === designerId || 
       u.email.toLowerCase() === searchTarget || 
       u.name.toLowerCase() === searchTarget
     );
 
-    const designerName = designer ? designer.name : (designerId.includes('@') ? designerId.split('@')[0] : designerId);
-    const designerActualId = designer ? designer.id : designerId;
+    if (!designer) {
+      try {
+        const { data } = await supabase.from('profiles').select('*').or(`id.eq.${designerId},email.eq.${designerId}`).maybeSingle();
+        if (data) designer = data;
+      } catch (e) {}
+    }
+
+    const designerName = designer ? designer.name : (String(designerId).includes('@') ? String(designerId).split('@')[0] : String(designerId));
+    const designerActualId = designer ? designer.id : String(designerId);
     const now = new Date().toISOString();
 
     caseRec.assignedDesignerId = designerActualId;
@@ -369,16 +378,28 @@ router.patch('/:id/assign', async (req: Request, res: Response): Promise<void> =
 
     db.updateCase(caseRec.id, caseRec);
 
-    // Supabase ক্লাউডে অ্যাসাইনমেন্ট সেভ
+    // নিশ্চিত UPSERT: ডাটাবেসে কেসটি না থাকলেও সাথে সাথে তৈরি হয়ে ডিজাইনারের নাম সেভ হবে
     try {
-      await supabase.from('cases').update({
+      await supabase.from('cases').upsert({
+        id: caseRec.id,
+        customer_id: caseRec.customerId || 'usr-client',
+        customer_name: caseRec.customerName || 'Dr. Client',
+        customer_clinic: caseRec.customerClinic || 'Dental Practice',
+        customer_email: caseRec.customerEmail || '',
+        doctor_name: caseRec.doctorName || 'Dr. Client',
+        patient_name: caseRec.patientName || 'Patient',
+        service_name: caseRec.serviceName || 'Crown',
+        units_quantity: caseRec.unitsQuantity || 1,
+        status: 'ASSIGNED',
         assigned_designer_id: designerActualId,
         assigned_designer_name: designerName,
-        status: 'ASSIGNED',
+        payment_status: caseRec.paymentStatus || 'PAID',
+        final_total_amount: caseRec.finalTotalAmount || 799,
+        created_at: caseRec.createdAt || now,
         updated_at: now
-      }).eq('id', caseRec.id);
+      });
     } catch (e) {
-      console.warn('Supabase assign sync warning:', e);
+      console.warn('Supabase assign upsert warning:', e);
     }
 
     res.json({ message: `Assigned to ${designerName}`, case: caseRec });
@@ -403,10 +424,21 @@ router.patch('/:id/status', async (req: Request, res: Response): Promise<void> =
     db.updateCase(caseRec.id, caseRec);
 
     try {
-      await supabase.from('cases').update({
+      await supabase.from('cases').upsert({
+        id: caseRec.id,
+        customer_id: caseRec.customerId || 'usr-client',
+        customer_name: caseRec.customerName || 'Dr. Client',
+        patient_name: caseRec.patientName || 'Patient',
+        service_name: caseRec.serviceName || 'Crown',
+        units_quantity: caseRec.unitsQuantity || 1,
         status: newStatus,
+        assigned_designer_id: caseRec.assignedDesignerId,
+        assigned_designer_name: caseRec.assignedDesignerName,
+        payment_status: caseRec.paymentStatus || 'PAID',
+        final_total_amount: caseRec.finalTotalAmount || 799,
+        created_at: caseRec.createdAt || now,
         updated_at: now
-      }).eq('id', caseRec.id);
+      });
     } catch (e) {}
 
     res.json({ message: `Status updated to ${newStatus}`, case: caseRec });
@@ -424,7 +456,11 @@ router.post('/:id/approve', async (req: Request, res: Response): Promise<void> =
     caseRec.updatedAt = now;
     db.updateCase(caseRec.id, caseRec);
     try {
-      await supabase.from('cases').update({ status: 'COMPLETED', updated_at: now }).eq('id', caseRec.id);
+      await supabase.from('cases').upsert({
+        id: caseRec.id,
+        status: 'COMPLETED',
+        updated_at: now
+      });
     } catch (e) {}
   }
   res.json({ message: 'Design approved successfully!', case: caseRec });
@@ -438,7 +474,11 @@ router.post('/:id/revision', async (req: Request, res: Response): Promise<void> 
     caseRec.updatedAt = now;
     db.updateCase(caseRec.id, caseRec);
     try {
-      await supabase.from('cases').update({ status: 'REVISION', updated_at: now }).eq('id', caseRec.id);
+      await supabase.from('cases').upsert({
+        id: caseRec.id,
+        status: 'REVISION',
+        updated_at: now
+      });
     } catch (e) {}
   }
   res.json({ message: 'Revision requested.', case: caseRec });
