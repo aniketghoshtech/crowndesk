@@ -57,7 +57,7 @@ router.get('/analytics', requireAdmin, async (req: Request, res: Response): Prom
     const pendingPaymentsCount = pendingPaymentCases.length;
     const pendingPaymentsAmount = pendingPaymentCases.reduce((acc, c) => acc + (c.finalTotalAmount || 0), 0);
 
-    const totalCustomers = users.filter(u => u.role === 'DOCTOR_LAB').length;
+    const totalCustomers = users.filter(u => u.role === 'DOCTOR_LAB' || u.role === 'DOCTOR' || u.role === 'CUSTOMER').length;
     const designers = users.filter(u => u.role === 'DESIGNER_EMPLOYEE' || (u.role as any) === 'DESIGNER');
     const activeDesignersCount = designers.filter(d => d.isActive !== false).length;
 
@@ -93,7 +93,7 @@ router.get('/analytics', requireAdmin, async (req: Request, res: Response): Prom
   }
 });
 
-// 2. GET /api/admin/employees - Supabase ক্লাউড থেকে ডিজাইনার ও স্টাফ ফেচ করা
+// 2. GET /api/admin/employees
 router.get('/employees', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     let cloudUsers: any[] = [];
@@ -140,13 +140,14 @@ router.get('/employees', requireAdmin, async (req: Request, res: Response): Prom
   }
 });
 
-// 3. POST /api/admin/employees - ক্লাউডে ডিজাইনার সেভ করা
+// 3. POST /api/admin/employees
 router.post('/employees', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User || db.getAllUsers().find(u => u.role === 'SUPER_ADMIN');
-    const { name, email, phone, specialization, role = 'DESIGNER_EMPLOYEE', password, initialPassword = 'Designer@123', isActive = true } = req.body;
+    const { name, fullName, email, phone, specialization, role = 'DESIGNER_EMPLOYEE', password, initialPassword = 'Designer@123', isActive = true } = req.body;
+    const targetName = name || fullName;
 
-    if (!name || !email) {
+    if (!targetName || !email) {
       res.status(400).json({ error: 'Name and email are required.' });
       return;
     }
@@ -159,7 +160,7 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
 
     const newEmp: User = {
       id: deterministicId,
-      name: name.trim(),
+      name: targetName.trim(),
       email: cleanEmail,
       passwordHash: hashed,
       role: role as any,
@@ -251,32 +252,38 @@ router.patch('/employees/:id/toggle-status', requireAdmin, async (req: Request, 
   }
 });
 
-// 5a. GET /api/admin/customers - ক্লাউড থেকে সরাসরি সব কাস্টমার ফেচ
+// =========================================================================
+// ৫. কাস্টমার ম্যানেজমেন্ট (CUSTOMERS) - ক্লাউড সিঙ্ক
+// =========================================================================
+
+// 5a. GET /api/admin/customers - ক্লাউড ডাটাবেস থেকে সব ডক্টর ও ল্যাব আনবে
 router.get('/customers', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     let cloudCustomers: any[] = [];
     try {
-      const { data } = await supabase.from('profiles').select('*').eq('role', 'DOCTOR_LAB');
+      const { data } = await supabase.from('profiles').select('*');
       if (data && data.length > 0) {
-        cloudCustomers = data.map(p => ({
-          id: p.id,
-          name: p.name || p.email.split('@')[0],
-          email: p.email,
-          role: 'DOCTOR_LAB',
-          phone: p.phone || '',
-          clinicOrLabName: p.clinic_or_lab_name || `${p.name}'s Dental Practice`,
-          address: p.address || '',
-          city: p.city || '',
-          state: p.state || '',
-          country: p.country || 'India',
-          isActive: p.is_active !== false,
-          createdAt: p.created_at || new Date().toISOString(),
-          updatedAt: p.updated_at || new Date().toISOString()
-        }));
+        cloudCustomers = data
+          .filter(p => p.role === 'DOCTOR_LAB' || p.role === 'DOCTOR' || p.role === 'CUSTOMER' || !['DESIGNER_EMPLOYEE', 'SUPER_ADMIN', 'ADMIN', 'STAFF'].includes(p.role))
+          .map(p => ({
+            id: p.id,
+            name: p.name || p.email.split('@')[0],
+            email: p.email,
+            role: 'DOCTOR_LAB',
+            phone: p.phone || '',
+            clinicOrLabName: p.clinic_or_lab_name || `${p.name}'s Dental Practice`,
+            address: p.address || '',
+            city: p.city || '',
+            state: p.state || '',
+            country: p.country || 'India',
+            isActive: p.is_active !== false,
+            createdAt: p.created_at || new Date().toISOString(),
+            updatedAt: p.updated_at || new Date().toISOString()
+          }));
       }
     } catch (e) {}
 
-    const localUsers = db.getAllUsers().filter(u => u.role === 'DOCTOR_LAB');
+    const localUsers = db.getAllUsers().filter(u => u.role === 'DOCTOR_LAB' || u.role === 'DOCTOR' || u.role === 'CUSTOMER');
     const custMap = new Map<string, any>();
     localUsers.forEach(u => custMap.set(u.email.toLowerCase(), u));
     cloudCustomers.forEach(u => custMap.set(u.email.toLowerCase(), { ...custMap.get(u.email.toLowerCase()), ...u }));
@@ -287,9 +294,9 @@ router.get('/customers', requireAdmin, async (req: Request, res: Response): Prom
 
     const customers = mergedCustomers.map(c => {
       const { passwordHash, ...safe } = c;
-      const custCases = cases.filter(item => item.customerId === c.id || item.customerEmail === c.email);
+      const custCases = cases.filter(item => item.customerId === c.id || item.customerEmail?.toLowerCase() === c.email?.toLowerCase());
       const totalSpent = payments
-        .filter(p => (p.customerId === c.id || p.customerEmail === c.email) && (p.status === 'SUCCESS' || p.status === 'PAID'))
+        .filter(p => (p.customerId === c.id || p.customerEmail?.toLowerCase() === c.email?.toLowerCase()) && (p.status === 'SUCCESS' || p.status === 'PAID'))
         .reduce((sum, p) => sum + p.amount, 0);
 
       return {
@@ -306,31 +313,53 @@ router.get('/customers', requireAdmin, async (req: Request, res: Response): Prom
   }
 });
 
-// 5b. POST /api/admin/customers - ক্লাউডে পারমানেন্ট কাস্টমার সেভ
+// 5b. POST /api/admin/customers - ক্লাউডে সরাসরি পারমানেন্ট কাস্টমার সেভ
 router.post('/customers', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const { name, email, phone, clinicOrLabName, address, city, state, country = 'India', password, initialPassword = 'Customer@123' } = req.body;
+    const { 
+      name, 
+      fullName, 
+      doctorName, 
+      customerName, 
+      email, 
+      customerEmail, 
+      workEmail, 
+      phone, 
+      mobile, 
+      clinicOrLabName, 
+      clinicName, 
+      labName, 
+      address, 
+      city, 
+      state, 
+      country = 'India', 
+      password, 
+      initialPassword = 'Customer@123' 
+    } = req.body;
 
-    if (!name || !email) {
-      res.status(400).json({ error: 'Doctor name and email are required.' });
+    const targetName = (name || fullName || doctorName || customerName || '').trim();
+    const targetEmail = (email || customerEmail || workEmail || '').trim().toLowerCase();
+
+    if (!targetName || !targetEmail) {
+      res.status(400).json({ error: 'Customer Name and Email are required.' });
       return;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
     const rawPassword = (password || initialPassword || 'Customer@123').trim();
     const hashed = hashPassword(rawPassword);
-    const deterministicId = `usr-doc-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const deterministicId = `usr-doc-${targetEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const targetClinic = (clinicOrLabName || clinicName || labName || `${targetName}'s Dental Practice`).trim();
     const now = new Date().toISOString();
 
     const newCust: User = {
       id: deterministicId,
-      name: name.trim(),
-      email: cleanEmail,
+      name: targetName,
+      email: targetEmail,
       passwordHash: hashed,
       role: 'DOCTOR_LAB',
-      phone: (phone || '').trim(),
-      clinicOrLabName: (clinicOrLabName || `${name.trim()}'s Dental Clinic`).trim(),
+      phone: (phone || mobile || '').trim(),
+      clinicOrLabName: targetClinic,
       address: address || '',
       city: city || '',
       state: state || '',
@@ -342,7 +371,7 @@ router.post('/customers', requireAdmin, async (req: Request, res: Response): Pro
       updatedAt: now
     };
 
-    let existing = db.findUserByEmail(cleanEmail);
+    let existing = db.findUserByEmail(targetEmail);
     if (existing) {
       Object.assign(existing, newCust);
       db.updateUser(existing.id, existing);
@@ -363,7 +392,9 @@ router.post('/customers', requireAdmin, async (req: Request, res: Response): Pro
         created_at: now,
         updated_at: now
       });
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Supabase customer save warning:', e);
+    }
 
     const { passwordHash, ...safe } = newCust;
     res.status(201).json({ message: 'Customer account created and permanently saved.', customer: safe });
@@ -376,13 +407,14 @@ router.post('/customers', requireAdmin, async (req: Request, res: Response): Pro
 router.put('/customers/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const cust = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
-    const { name, email, phone, clinicOrLabName, address, city, state, country, isActive, password } = req.body;
+    const { name, fullName, doctorName, email, phone, clinicOrLabName, clinicName, address, city, state, country, isActive, password } = req.body;
+    const targetName = name || fullName || doctorName;
 
     if (cust) {
-      if (name) cust.name = name.trim();
+      if (targetName) cust.name = targetName.trim();
       if (email) cust.email = email.trim().toLowerCase();
       if (phone !== undefined) cust.phone = phone;
-      if (clinicOrLabName !== undefined) cust.clinicOrLabName = clinicOrLabName;
+      if (clinicOrLabName || clinicName) cust.clinicOrLabName = clinicOrLabName || clinicName;
       if (isActive !== undefined) cust.isActive = Boolean(isActive);
       if (password && password.trim()) cust.passwordHash = hashPassword(password.trim());
       cust.updatedAt = new Date().toISOString();
@@ -393,9 +425,9 @@ router.put('/customers/:id', requireAdmin, async (req: Request, res: Response): 
       await supabase.from('profiles').upsert({
         id: req.params.id,
         email: email ? email.trim().toLowerCase() : undefined,
-        name: name ? name.trim() : undefined,
+        name: targetName ? targetName.trim() : undefined,
         phone: phone,
-        clinic_or_lab_name: clinicOrLabName,
+        clinic_or_lab_name: clinicOrLabName || clinicName,
         is_active: isActive !== undefined ? Boolean(isActive) : true,
         updated_at: new Date().toISOString()
       });
@@ -423,32 +455,15 @@ router.delete('/customers/:id', requireAdmin, async (req: Request, res: Response
   }
 });
 
-// 5e. POST /api/admin/cases - অ্যাডমিন প্যানেল থেকে কেস তৈরি ও ক্লাউডে পারমানেন্ট সেভ
+// 5e. POST /api/admin/cases
 router.post('/cases', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const {
-      customerId,
-      patientName,
-      patientRef,
-      doctorName,
-      serviceId,
-      serviceName,
-      unitsQuantity = 1,
-      teethNumbers = [],
-      shade = 'A2',
-      material,
-      instructions = '',
-      priority = 'STANDARD',
-      dueDate,
-      assignedDesignerId
-    } = req.body;
+    const { customerId, patientName, patientRef, doctorName, serviceId, serviceName, unitsQuantity = 1, teethNumbers = [], shade = 'A2', material, priority = 'STANDARD', dueDate, assignedDesignerId } = req.body;
 
     const targetPatient = patientName || patientRef || 'General Case';
     let customer = customerId ? db.findUserById(customerId) : undefined;
-    if (!customer) {
-      customer = db.getAllUsers().find(u => u.role === 'DOCTOR_LAB');
-    }
+    if (!customer) customer = db.getAllUsers().find(u => u.role === 'DOCTOR_LAB');
 
     const newCaseId = db.generateNextCaseId();
     const now = new Date().toISOString();
@@ -478,7 +493,7 @@ router.post('/cases', requireAdmin, async (req: Request, res: Response): Promise
       unitsQuantity: Number(unitsQuantity),
       teeth: [{ toothNumber: '11', serviceCode: 'CROWN', shade: shade || 'A2', material: material || 'Zirconia' }],
       teethNumbers: teethNumbers.length > 0 ? teethNumbers : ['11'],
-      instructions: instructions || 'Standard anatomical contours.',
+      instructions: 'Standard anatomical contours.',
       dueDate: dueDate || new Date(Date.now() + 86400000 * 2).toISOString(),
       priority: priority || 'STANDARD',
       status: assignedDesignerId ? 'ASSIGNED' : 'NEW',
@@ -500,7 +515,6 @@ router.post('/cases', requireAdmin, async (req: Request, res: Response): Promise
 
     db.addCase(newCase);
 
-    // Supabase ক্লাউডে কেস সেভ
     try {
       await supabase.from('cases').upsert({
         id: newCase.id,
@@ -520,9 +534,7 @@ router.post('/cases', requireAdmin, async (req: Request, res: Response): Promise
         created_at: newCase.createdAt,
         updated_at: newCase.updatedAt
       });
-    } catch (e) {
-      console.warn('Supabase admin case save warning:', e);
-    }
+    } catch (e) {}
 
     res.status(201).json({ message: `Case ${newCaseId} created successfully.`, case: newCase });
   } catch (err: any) {
@@ -530,7 +542,7 @@ router.post('/cases', requireAdmin, async (req: Request, res: Response): Promise
   }
 });
 
-// 5f. PUT /api/admin/cases/:id - কেস এডিট ও ক্লাউড সিঙ্ক
+// 5f. PUT /api/admin/cases/:id
 router.put('/cases/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const caseRec = db.findCaseById(req.params.id);
@@ -545,13 +557,14 @@ router.put('/cases/:id', requireAdmin, async (req: Request, res: Response): Prom
     db.updateCase(caseRec.id, caseRec);
 
     try {
-      await supabase.from('cases').update({
+      await supabase.from('cases').upsert({
+        id: caseRec.id,
         patient_name: caseRec.patientName,
         status: caseRec.status,
         assigned_designer_id: caseRec.assignedDesignerId,
         assigned_designer_name: caseRec.assignedDesignerName,
         updated_at: caseRec.updatedAt
-      }).eq('id', caseRec.id);
+      });
     } catch (e) {}
 
     res.json({ message: `Case ${caseRec.id} updated successfully.`, case: caseRec });
@@ -560,7 +573,7 @@ router.put('/cases/:id', requireAdmin, async (req: Request, res: Response): Prom
   }
 });
 
-// 5g. DELETE /api/admin/cases/:id - কেস ডিলিট ও ক্লাউড সিঙ্ক
+// 5g. DELETE /api/admin/cases/:id
 router.delete('/cases/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     db.deleteCase(req.params.id);
@@ -573,7 +586,7 @@ router.delete('/cases/:id', requireAdmin, async (req: Request, res: Response): P
   }
 });
 
-// 6. অন্যান্য সেটিংস ও রুট
+// 6. Settings & Other Admin Routes
 router.get('/payments', requireAdmin, (req: Request, res: Response): void => {
   res.json({ payments: db.getAllPayments() });
 });
