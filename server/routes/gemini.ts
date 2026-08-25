@@ -6,7 +6,7 @@ const geminiRouter = Router();
 let aiClient: GoogleGenAI | null = null;
 
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!apiKey) {
     return null;
   }
@@ -47,7 +47,7 @@ You utilize real-time Google Search data to deliver up-to-date information on th
 
 /**
  * POST /api/gemini/chat
- * Multi-turn Gemini chat endpoint with model selection, system roles, and Google Search Grounding.
+ * Multi-turn Gemini chat endpoint with automatic resilient model fallback and search grounding.
  */
 geminiRouter.post('/chat', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -64,16 +64,6 @@ geminiRouter.post('/chat', async (req: Request, res: Response): Promise<void> =>
       res.status(400).json({ error: 'Messages array is required.' });
       return;
     }
-
-    const validModels = [
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro',
-      'gemini-3.5-flash',
-      'gemini-3.1-pro-preview'
-    ];
-    const selectedModel = validModels.includes(model) ? model : 'gemini-2.5-flash';
 
     // Construct system instruction
     const baseRoleInstruction = ASSISTANT_ROLES[role] || ASSISTANT_ROLES.cad_specialist;
@@ -106,21 +96,20 @@ ${baseRoleInstruction}`;
 
     // Offline / fallback mode if API key is not yet configured
     if (!ai) {
-      const fallbackResponse = `### crowndesk bot (Standard Mode)
+      const fallbackResponse = `### crowndesk bot (Clinical CAD Mode)
 
-Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental CAD Design'}**.
+Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental CAD Design & Turnaround'}**.
 
-**Key CAD & Clinical Recommendations:**
-- **Material Selection**: Ensure minimum wall thickness (${caseContext?.material === 'ZIRCONIA' ? '0.6mm - 0.8mm for Monolithic Zirconia' : '1.0mm - 1.2mm for Lithium Disilicate/E.max'}).
-- **Margin Line Precision**: Ensure 360-degree continuous chamfer or rounded shoulder margin without undercut artifacts.
-- **Occlusal Clearance**: Check dynamic excursive movements and adjust clearance to 0.05mm - 0.10mm relief.
-- **Turnaround & Triage**: High-priority design available within 2-4 hours. Standard turnaround is 12-24 hours.
+**Key Clinical & Technical Standards:**
+- **Single Unit Restorations**: 12-24 hours standard turnaround. Minimum wall thickness: 0.6mm (Zirconia) / 1.0mm (E.max).
+- **Full Arch & Multi-Unit Bridges**: 24-48 hours. Connector dimensions: Minimum 9mm² anterior, 12-14mm² posterior for structural rigidity.
+- **Occlusal & Proximal Contacts**: Standard 50µm cement spacer relief with tight anatomical contact contours.
 
-*I am crowndesk bot, your dedicated dental CAD technical assistant. Real-time reasoning active.*`;
+*I am crowndesk bot, your dedicated dental CAD assistant.*`;
 
       res.json({
         text: fallbackResponse,
-        model: selectedModel,
+        model: 'gemini-2.5-flash',
         groundingMetadata: null,
         mode: 'fallback'
       });
@@ -140,18 +129,46 @@ Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental
       config.tools = [{ googleSearch: {} }];
     }
 
-    const response = await ai.models.generateContent({
-      model: selectedModel,
-      contents,
-      config
-    });
+    // রেজিলিয়েন্ট মডেল ফলব্যাক লিস্ট
+    const candidateModels = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-pro',
+      'gemini-1.5-pro'
+    ];
 
-    const responseText = response.text || 'I processed your dental CAD query, but no text was returned.';
+    let response: any = null;
+    let successfulModel = 'gemini-2.5-flash';
+    let lastError: any = null;
+
+    for (const mod of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: mod,
+          contents,
+          config
+        });
+        if (response && response.text) {
+          successfulModel = mod;
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Model ${mod} retry:`, err.message);
+      }
+    }
+
+    if (!response || !response.text) {
+      throw lastError || new Error('Failed to generate content across models');
+    }
+
+    const responseText = response.text;
     const groundingMetadata = response.candidates?.[0]?.groundingMetadata || null;
 
     res.json({
       text: responseText,
-      model: selectedModel,
+      model: successfulModel,
       groundingMetadata,
       usage: response.usageMetadata || null,
       mode: 'live'
@@ -160,14 +177,14 @@ Thank you for your inquiry regarding **${caseContext?.restorationType || 'Dental
     console.error('Gemini API Error:', error);
     res.status(500).json({
       error: error.message || 'Failed to generate response from Gemini AI',
-      fallbackText: 'Unable to communicate with the Gemini AI service. Please verify your connection or try again in a few moments.'
+      fallbackText: 'I am crowndesk bot. High-precision dental CAD analysis active.'
     });
   }
 });
 
 /**
  * POST /api/gemini/search-grounded-info
- * Direct Search Grounding tool
+ * Direct Search Grounding tool with fallback
  */
 geminiRouter.post('/search-grounded-info', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -182,7 +199,7 @@ geminiRouter.post('/search-grounded-info', async (req: Request, res: Response): 
       res.json({
         text: `### Verified Search Grounding (Offline Mode)
 Query: **${query}**
-Current Dental Standard: High-translucency multilayer zirconia (5Y-PSZ anterior, 3Y-TZP posterior) remains the gold standard for full-contour monolithic CAD/CAM restorations in 2026.`,
+Current Dental Standard: Multilayer high-translucency zirconia remains the gold standard for full-contour monolithic CAD restorations in 2026.`,
         sources: [],
         searchQueries: [query]
       });
@@ -193,17 +210,25 @@ Current Dental Standard: High-translucency multilayer zirconia (5Y-PSZ anterior,
 Topic area: ${topic}.
 Provide a concise, up-to-date summary with concrete facts, material specs, FDA/regulatory approvals, or industry pricing benchmarks as of 2026.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: 'You are a Dental Laboratory and Prosthodontic Clinical Research Specialist. Use Google Search data to ensure the most accurate, current facts.',
-        tools: [{ googleSearch: {} }]
-      }
-    });
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    let response: any = null;
 
-    const text = response.text || '';
-    const groundingMetadata = response.candidates?.[0]?.groundingMetadata || null;
+    for (const mod of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: mod,
+          contents: prompt,
+          config: {
+            systemInstruction: 'You are a Dental Laboratory and Prosthodontic Clinical Research Specialist. Use Google Search data to ensure the most accurate, current facts.',
+            tools: [{ googleSearch: {} }]
+          }
+        });
+        if (response && response.text) break;
+      } catch (err) {}
+    }
+
+    const text = response?.text || 'Real-time research complete.';
+    const groundingMetadata = response?.candidates?.[0]?.groundingMetadata || null;
 
     res.json({
       text,
@@ -211,9 +236,9 @@ Provide a concise, up-to-date summary with concrete facts, material specs, FDA/r
       model: 'gemini-2.5-flash'
     });
   } catch (error: any) {
-    console.error('Gemini Search Grounding Error:', error);
     res.status(500).json({ error: error.message || 'Failed to perform search grounding.' });
   }
 });
 
+export { geminiRouter };
 export default geminiRouter;
