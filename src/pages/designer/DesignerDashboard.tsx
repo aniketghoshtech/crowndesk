@@ -19,7 +19,8 @@ import {
   Send,
   UploadCloud,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Power
 } from 'lucide-react';
 
 interface DesignerDashboardProps {
@@ -37,11 +38,14 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL');
 
+  // Duty Status (On Duty Online / Off Duty Offline)
+  const [isOnDuty, setIsOnDuty] = useState(user?.isActive !== false);
+  const [dutyLoading, setDutyLoading] = useState(false);
+
   const fetchCases = async () => {
     try {
       setLoading(true);
       const res = await api.getCases();
-      // Filter for this designer or all if admin/unassigned
       const list = res.cases || [];
       setCases(list);
       if (list.length > 0) {
@@ -65,6 +69,23 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
   useEffect(() => {
     fetchCases();
   }, []);
+
+  const handleToggleDuty = async () => {
+    try {
+      setDutyLoading(true);
+      const res = await api.toggleDutyStatus(!isOnDuty);
+      setIsOnDuty(res.isActive);
+      if (res.isActive) {
+        toast.success('You are now ON DUTY (Online) & ready for new CAD cases.');
+      } else {
+        toast.info('You are now OFF DUTY (Offline). Great work today!');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update duty status');
+    } finally {
+      setDutyLoading(false);
+    }
+  };
 
   const handleRefreshSingleCase = async () => {
     if (!selectedCase) return;
@@ -107,7 +128,7 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      {/* Header */}
+      {/* Header with Duty Switch & Stats */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
           <div className="flex items-center gap-2">
@@ -121,28 +142,47 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
           </p>
         </div>
 
-        {/* Quick status tabs */}
-        <div className="flex flex-wrap gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
-          {[
-            { id: 'ALL', label: 'All Cases' },
-            { id: 'MY_CASES', label: 'My Assigned' },
-            { id: 'IN_DESIGN', label: 'In Design' },
-            { id: 'QC', label: 'QC' },
-            { id: 'APPROVAL', label: 'Approval' },
-            { id: 'REVISION', label: 'Revision' }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id as any)}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                statusFilter === tab.id
-                  ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Duty Toggle Button & Filter Tabs */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Duty Status Switch */}
+          <button
+            type="button"
+            onClick={handleToggleDuty}
+            disabled={dutyLoading}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition shadow-sm ${
+              isOnDuty
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+            }`}
+            title="Click to toggle between On Duty (Online) and Off Duty (Offline)"
+          >
+            <span className={`w-2 h-2 rounded-full ${isOnDuty ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+            <span>{dutyLoading ? 'Updating...' : isOnDuty ? '🟢 ON DUTY (Online)' : '⚪ OFF DUTY (Offline)'}</span>
+          </button>
+
+          {/* Quick status tabs */}
+          <div className="flex flex-wrap gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+            {[
+              { id: 'ALL', label: 'All Cases' },
+              { id: 'MY_CASES', label: 'My Assigned' },
+              { id: 'IN_DESIGN', label: 'In Design' },
+              { id: 'QC', label: 'QC' },
+              { id: 'APPROVAL', label: 'Approval' },
+              { id: 'REVISION', label: 'Revision' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id as any)}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  statusFilter === tab.id
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -276,16 +316,16 @@ export const DesignerDashboard: React.FC<DesignerDashboardProps> = ({ initialCas
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Occlusal Clearance</span>
-                    <span className="font-semibold text-slate-200">{selectedCase.occlusalClearance}</span>
+                    <span className="font-semibold text-slate-200">{selectedCase.occlusalClearance || 'Standard'}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Proximal Contact</span>
-                    <span className="font-semibold text-slate-200">{selectedCase.contactTightness}</span>
+                    <span className="font-semibold text-slate-200">{selectedCase.contactTightness || 'Normal'}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Doctor Notes</span>
                     <span className="text-slate-300 italic truncate block">
-                      {selectedCase.specialInstructions || 'Standard anatomy requested'}
+                      {selectedCase.instructions || selectedCase.specialInstructions || 'Standard anatomy requested'}
                     </span>
                   </div>
                 </div>
