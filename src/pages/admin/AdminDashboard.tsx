@@ -1390,11 +1390,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                         </button>
                         <button
                           onClick={async () => {
-                            const newPass = prompt(`Set new password for ${emp.name}:`, 'CrownPass123!');
-                            if (newPass) {
-                              await api.adminResetUserPassword(emp.id, newPass, true);
-                              alert(`Password reset for ${emp.name}. Forced change active.`);
-                              fetchAllData();
+                            const newPass = prompt(`Set new custom password for ${emp.name}:`, '');
+                            if (newPass && newPass.trim()) {
+                              try {
+                                await api.adminResetUserPassword(emp.id, newPass.trim(), false);
+                                alert(`Password successfully updated for ${emp.name}!`);
+                                fetchAllData();
+                              } catch (err: any) {
+                                alert(err.message || 'Failed to update password');
+                              }
                             }
                           }}
                           className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition"
@@ -1555,15 +1559,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   <div className="flex items-center justify-end gap-1.5 pt-3 border-t border-slate-800/80">
                     <button
                       onClick={async () => {
-                        const newPass = prompt(`Set new password for ${d.name}:`, 'CrownPass123!');
-                        if (newPass) {
-                          await api.adminResetUserPassword(d.id, newPass, true);
-                          alert(`Password reset for ${d.name}. Forced change active.`);
-                          fetchAllData();
+                        const newPass = prompt(`Set new custom password for ${d.name}:`, '');
+                        if (newPass && newPass.trim()) {
+                          try {
+                            await api.adminResetUserPassword(d.id, newPass.trim(), false);
+                            alert(`Password successfully updated for ${d.name}!`);
+                            fetchAllData();
+                          } catch (err: any) {
+                            alert(err.message || 'Failed to update password');
+                          }
                         }
                       }}
                       className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-800 transition"
-                      title="Reset Password"
+                      title="Set Custom Password"
                     >
                       <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
                       <span>Password</span>
@@ -2204,7 +2212,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                   required
                   value={newStaffData.password}
                   onChange={e => setNewStaffData({ ...newStaffData, password: e.target.value })}
-                  placeholder="Min 6 chars (forced reset on first login)"
+                  placeholder="Min 6 chars"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
                 />
               </div>
@@ -2620,3 +2628,5 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     </div>
   );
 };
+
+export default AdminDashboard;

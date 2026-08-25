@@ -210,7 +210,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// 3. Universal Login - প্রত্যেকের ইউনিক পাসওয়ার্ড ভ্যালিডেশন (No Common Passwords)
+// 3. Universal Login - Supabase ক্লাউড থেকে সরাসরি লেটেস্ট পাসওয়ার্ড যাচাই
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -221,38 +221,40 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = password.trim();
+    const incomingHash = hashPassword(cleanPass);
     let user = db.findUserByEmail(cleanEmail);
 
-    // ১. মেমোরিতে না পেলে Supabase ক্লাউড ডাটাবেস থেকে চেক
-    if (!user) {
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', cleanEmail)
-          .maybeSingle();
+    // সর্বদা Supabase থেকে সর্বশেষ পাসওয়ার্ড হ্যাশ ফেচ করে মেলাবে
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', cleanEmail)
+        .maybeSingle();
 
-        if (data) {
+      if (data) {
+        if (!user) {
           user = {
             id: data.id,
             name: data.name,
             email: data.email,
-            passwordHash: data.password_hash || hashPassword(password),
+            passwordHash: data.password_hash || incomingHash,
             role: data.role,
             phone: data.phone || '',
             clinicOrLabName: data.clinic_or_lab_name || '',
             specialization: data.specialization || '',
             isActive: data.is_active !== false,
-            isEmailVerified: true,
-            forcePasswordChange: false,
             createdAt: data.created_at || new Date().toISOString(),
             updatedAt: data.updated_at || new Date().toISOString()
           };
           db.addUser(user);
+        } else if (data.password_hash) {
+          user.passwordHash = data.password_hash;
         }
-      } catch (e) {
-        console.warn('Supabase login profile fetch warning:', e);
       }
+    } catch (e) {
+      console.warn('Supabase login profile fetch warning:', e);
     }
 
     if (!user) {
@@ -274,12 +276,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const incomingHash = hashPassword(password);
-
-    // শুধুমাত্র এই নির্দিষ্ট ইউজারের পাসওয়ার্ড চেক হবে (কমন পাসওয়ার্ড বাইপাস সম্পূর্ণ বন্ধ)
+    // শুধুমাত্র অ্যাডমিনের সেট করা নিজস্ব পাসওয়ার্ড দিয়ে যাচাই
     const isPasswordMatch = 
       user.passwordHash === incomingHash ||
-      (user as any).password === password;
+      (user as any).password === cleanPass ||
+      user.passwordHash === cleanPass;
 
     if (!isPasswordMatch) {
       db.logAudit({
@@ -517,6 +518,5 @@ router.post('/logout', (req: Request, res: Response): void => {
   res.json({ message: 'Logged out successfully.' });
 });
 
-// Default and Named Exports
 export { router };
 export default router;
