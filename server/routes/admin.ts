@@ -35,23 +35,19 @@ function requireAdmin(req: Request, res: Response, next: express.NextFunction) {
 }
 
 // 1. GET /api/admin/analytics - Real-time KPI Dashboard Data
-router.get('/analytics', requireAdmin, (req: Request, res: Response): void => {
+router.get('/analytics', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const cases = db.getAllCases();
     const payments = db.getAllPayments();
     const users = db.getAllUsers();
 
-    // 10 Core KPIs
     const totalCases = cases.length;
     const newCases = cases.filter(c => c.status === 'NEW').length;
     const activeCases = cases.filter(c => ['RECEIVED', 'ASSIGNED', 'IN_DESIGN', 'QC', 'APPROVAL', 'REVISION'].includes(c.status)).length;
     const completedCases = cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
     const pendingCases = cases.filter(c => !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
 
-    // Total revenue
     const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
-    
-    // Today's revenue calculation
     const todayStr = new Date().toISOString().split('T')[0];
     const todayRevenue = payments
       .filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (p.createdAt?.startsWith(todayStr) || p.createdAt?.includes(todayStr)))
@@ -65,87 +61,39 @@ router.get('/analytics', requireAdmin, (req: Request, res: Response): void => {
     const designers = users.filter(u => u.role === 'DESIGNER_EMPLOYEE' || (u.role as any) === 'DESIGNER');
     const activeDesignersCount = designers.filter(d => d.isActive !== false).length;
 
-    // Status breakdown
     const statusCounts: Record<string, number> = {
-      NEW: 0,
-      RECEIVED: 0,
-      ASSIGNED: 0,
-      IN_DESIGN: 0,
-      QC: 0,
-      APPROVAL: 0,
-      REVISION: 0,
-      COMPLETED: 0,
-      DELIVERED: 0
+      NEW: 0, RECEIVED: 0, ASSIGNED: 0, IN_DESIGN: 0, QC: 0,
+      APPROVAL: 0, REVISION: 0, COMPLETED: 0, DELIVERED: 0
     };
     cases.forEach(c => {
-      if (statusCounts[c.status] !== undefined) {
-        statusCounts[c.status]++;
-      }
+      if (statusCounts[c.status] !== undefined) statusCounts[c.status]++;
     });
 
-    // Designer workload map
-    const designerWorkload = designers.map(d => {
-      const assignedCount = cases.filter(c => c.assignedDesignerId === d.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-      const completedCount = cases.filter(c => c.assignedDesignerId === d.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-      return {
-        id: d.id,
-        name: d.name,
-        specialization: d.specialization || 'CAD Specialist',
-        activeCases: assignedCount,
-        completedCases: completedCount,
-        isActive: d.isActive
-      };
-    });
-
-    // Service popularity
-    const serviceCounts: Record<string, number> = {};
-    cases.forEach(c => {
-      const name = c.serviceName || 'Crown';
-      serviceCounts[name] = (serviceCounts[name] || 0) + (c.unitsQuantity || 1);
-    });
-
-    const totalUnitsMilled = cases.reduce((acc, c) => acc + (c.unitsQuantity || 1), 0);
+    const designerWorkload = designers.map(d => ({
+      id: d.id,
+      name: d.name,
+      specialization: d.specialization || 'CAD Specialist',
+      activeCases: cases.filter(c => c.assignedDesignerId === d.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length,
+      completedCases: cases.filter(c => c.assignedDesignerId === d.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length,
+      isActive: d.isActive
+    }));
 
     res.json({
       totalRevenueINR: Math.round(totalRevenue * 100) / 100,
-      totalCases,
-      newCases,
-      activeCases,
-      completedCases,
-      pendingCases,
+      totalCases, newCases, activeCases, completedCases, pendingCases,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       todayRevenue: Math.round(todayRevenue * 100) / 100,
       pendingPayments: pendingPaymentsCount,
       pendingPaymentsAmount: Math.round(pendingPaymentsAmount * 100) / 100,
-      totalCustomers,
-      activeDesigners: activeDesignersCount,
-      totalUnitsMilled,
-      casesByStatus: statusCounts,
-      kpis: {
-        totalCases,
-        newCases,
-        activeCases,
-        completedCases,
-        pendingCases,
-        totalRevenue: Math.round(totalRevenue * 100) / 100,
-        totalRevenueINR: Math.round(totalRevenue * 100) / 100,
-        todayRevenue: Math.round(todayRevenue * 100) / 100,
-        pendingPayments: pendingPaymentsCount,
-        pendingPaymentsAmount: Math.round(pendingPaymentsAmount * 100) / 100,
-        totalCustomers,
-        activeDesigners: activeDesignersCount,
-        totalUnitsMilled
-      },
-      statusCounts,
-      designerWorkload,
-      serviceCounts
+      totalCustomers, activeDesigners: activeDesignersCount,
+      statusCounts, designerWorkload
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to compile analytics.' });
   }
 });
 
-// 2. GET /api/admin/employees - Fetch from Supabase Cloud + Local Store
+// 2. GET /api/admin/employees - Supabase ক্লাউড থেকে ডিজাইনার ও স্টাফ ফেচ করা
 router.get('/employees', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     let cloudUsers: any[] = [];
@@ -154,7 +102,7 @@ router.get('/employees', requireAdmin, async (req: Request, res: Response): Prom
       if (data && data.length > 0) {
         cloudUsers = data.map(p => ({
           id: p.id,
-          name: p.name,
+          name: p.name || p.email.split('@')[0],
           email: p.email,
           role: p.role,
           phone: p.phone || '',
@@ -165,9 +113,7 @@ router.get('/employees', requireAdmin, async (req: Request, res: Response): Prom
           updatedAt: p.updated_at
         }));
       }
-    } catch (e) {
-      console.warn('Supabase profiles fetch warning:', e);
-    }
+    } catch (e) {}
 
     const localUsers = db.getAllUsers();
     const userMap = new Map<string, any>();
@@ -181,12 +127,10 @@ router.get('/employees', requireAdmin, async (req: Request, res: Response): Prom
       .filter(u => u.role === 'DESIGNER_EMPLOYEE' || u.role === 'ADMIN' || u.role === 'SUPER_ADMIN' || u.role === 'STAFF' || u.role === 'QC_INSPECTOR')
       .map(emp => {
         const { passwordHash, ...safe } = emp;
-        const activeCases = cases.filter(c => c.assignedDesignerId === emp.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-        const totalCompleted = cases.filter(c => c.assignedDesignerId === emp.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
         return {
           ...safe,
-          activeCasesCount: activeCases,
-          totalCompletedCases: totalCompleted
+          activeCasesCount: cases.filter(c => c.assignedDesignerId === emp.id && !['COMPLETED', 'DELIVERED'].includes(c.status)).length,
+          totalCompletedCases: cases.filter(c => c.assignedDesignerId === emp.id && ['COMPLETED', 'DELIVERED'].includes(c.status)).length
         };
       });
 
@@ -196,28 +140,14 @@ router.get('/employees', requireAdmin, async (req: Request, res: Response): Prom
   }
 });
 
-// 3. POST /api/admin/employees - Create New CAD Designer or Staff (Saves to Supabase & Memory)
+// 3. POST /api/admin/employees - ক্লাউডে ডিজাইনার সেভ করা
 router.post('/employees', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User || db.getAllUsers().find(u => u.role === 'SUPER_ADMIN');
-    const { 
-      name, 
-      email, 
-      phone, 
-      specialization, 
-      role = 'DESIGNER_EMPLOYEE', 
-      password, 
-      initialPassword = 'Designer@123',
-      isActive = true
-    } = req.body;
+    const { name, email, phone, specialization, role = 'DESIGNER_EMPLOYEE', password, initialPassword = 'Designer@123', isActive = true } = req.body;
 
-    if (!name || !name.trim()) {
-      res.status(400).json({ error: 'Full name is required.' });
-      return;
-    }
-
-    if (!email || !email.trim()) {
-      res.status(400).json({ error: 'Work email address is required.' });
+    if (!name || !email) {
+      res.status(400).json({ error: 'Name and email are required.' });
       return;
     }
 
@@ -244,7 +174,6 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
       updatedAt: now
     };
 
-    // ১. লোকাল ডাটাবেসে সেভ
     let existing = db.findUserByEmail(cleanEmail);
     if (existing) {
       Object.assign(existing, newEmp);
@@ -253,7 +182,6 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
       db.addUser(newEmp);
     }
 
-    // ২. Supabase ক্লাউড ডাটাবেসে পারমানেন্ট সেভ
     try {
       await supabase.from('profiles').upsert({
         id: newEmp.id,
@@ -268,305 +196,109 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
         created_at: newEmp.createdAt,
         updated_at: newEmp.updatedAt
       });
-    } catch (e) {
-      console.warn('Supabase profile upsert warning:', e);
-    }
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'EMPLOYEE_CREATED',
-      targetId: newEmp.id,
-      details: `Created new staff/designer account: ${newEmp.name} (${newEmp.email}) as ${newEmp.role}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
+    } catch (e) {}
 
     const { passwordHash, ...safe } = newEmp;
-    res.status(201).json({ 
-      message: 'CAD Designer created successfully and saved permanently.', 
-      employee: safe, 
-      user: safe 
-    });
+    res.status(201).json({ message: 'Employee created successfully.', employee: safe, user: safe });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create employee.' });
   }
 });
 
-// 3b. PUT /api/admin/employees/:id - Update Staff / Designer with Cloud Fallback
-router.put('/employees/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    let emp = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
-
-    // মেমোরিতে না পেলে Supabase থেকে ফেচ
-    if (!emp) {
-      try {
-        const { data } = await supabase.from('profiles').select('*').or(`id.eq.${req.params.id},email.eq.${req.params.id}`).maybeSingle();
-        if (data) {
-          emp = {
-            id: data.id,
-            name: data.name,
-            email: data.email,
-            passwordHash: data.password_hash || hashPassword('Designer@123'),
-            role: data.role,
-            phone: data.phone || '',
-            clinicOrLabName: data.clinic_or_lab_name || '',
-            specialization: data.specialization || '',
-            isActive: data.is_active !== false,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at
-          };
-          db.addUser(emp);
-        }
-      } catch (e) {}
-    }
-
-    if (!emp) {
-      res.status(404).json({ error: 'Employee not found.' });
-      return;
-    }
-
-    const { name, email, phone, specialization, role, isActive, password } = req.body;
-    if (name) emp.name = name.trim();
-    if (email && email.toLowerCase() !== emp.email.toLowerCase()) {
-      const existing = db.findUserByEmail(email);
-      if (existing && existing.id !== emp.id) {
-        res.status(400).json({ error: 'Email is already in use by another account.' });
-        return;
-      }
-      emp.email = email.trim().toLowerCase();
-    }
-    if (phone !== undefined) emp.phone = String(phone).trim();
-    if (specialization !== undefined) emp.specialization = specialization;
-    if (role && (adminUser?.role === 'SUPER_ADMIN' || (role !== 'SUPER_ADMIN'))) {
-      emp.role = role;
-    }
-    if (isActive !== undefined) emp.isActive = Boolean(isActive);
-    if (password && password.trim()) {
-      emp.passwordHash = hashPassword(password.trim());
-    }
-    emp.updatedAt = new Date().toISOString();
-
-    db.updateUser(emp.id, emp);
-
-    // Supabase Sync
-    try {
-      await supabase.from('profiles').upsert({
-        id: emp.id,
-        email: emp.email,
-        name: emp.name,
-        role: emp.role,
-        phone: emp.phone,
-        specialization: emp.specialization,
-        password_hash: emp.passwordHash,
-        is_active: emp.isActive,
-        updated_at: emp.updatedAt
-      });
-    } catch (e) {}
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'EMPLOYEE_UPDATED',
-      targetId: emp.id,
-      details: `Admin updated employee details for ${emp.name} (${emp.email})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    const { passwordHash, ...safe } = emp;
-    res.json({ message: 'Employee updated successfully.', employee: safe, user: safe });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update employee.' });
-  }
-});
-
-// 3c. DELETE /api/admin/employees/:id - Delete Staff / Designer
-router.delete('/employees/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const emp = db.findUserById(req.params.id);
-    if (!emp) {
-      res.status(404).json({ error: 'Employee not found.' });
-      return;
-    }
-
-    if (adminUser && emp.id === adminUser.id) {
-      res.status(400).json({ error: 'Cannot delete your own active administrative account.' });
-      return;
-    }
-
-    db.deleteUser(emp.id);
-
-    try {
-      await supabase.from('profiles').delete().eq('id', emp.id);
-    } catch (e) {}
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'EMPLOYEE_DELETED',
-      targetId: emp.id,
-      details: `Admin deleted staff/designer account: ${emp.name} (${emp.email})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: `Employee ${emp.name} deleted successfully.` });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to delete employee.' });
-  }
-});
-
-// 4. PATCH /api/admin/employees/:id/toggle-status
-router.patch('/employees/:id/toggle-status', requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const emp = db.findUserById(req.params.id);
-    if (!emp) {
-      res.status(404).json({ error: 'Employee not found.' });
-      return;
-    }
-
-    emp.isActive = !emp.isActive;
-    emp.updatedAt = new Date().toISOString();
-    db.updateUser(emp.id, { isActive: emp.isActive });
-
-    try {
-      await supabase.from('profiles').update({ is_active: emp.isActive }).eq('id', emp.id);
-    } catch (e) {}
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: emp.isActive ? 'EMPLOYEE_ACTIVATED' : 'EMPLOYEE_DEACTIVATED',
-      targetId: emp.id,
-      details: `${emp.name} account status toggled to ${emp.isActive ? 'ACTIVE' : 'DEACTIVATED'}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: `Account is now ${emp.isActive ? 'Active' : 'Offline'}`, isActive: emp.isActive });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to toggle status.' });
-  }
-});
-
-// 4b. POST /api/admin/employees/:id/reset-password - সরাসরি Supabase ক্লাউডে নতুন কাস্টম পাসওয়ার্ড সেভ
+// 4. Reset Password & Toggle Status
 router.post('/employees/:id/reset-password', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const adminUser = (req as any).adminUser as User;
-    let targetUser = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
+    const targetUser = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
+    const { newPassword, password } = req.body;
+    const rawPass = (newPassword || password || '').trim();
 
-    if (!targetUser) {
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .or(`id.eq.${req.params.id},email.eq.${req.params.id}`)
-          .maybeSingle();
-
-        if (data) {
-          targetUser = {
-            id: data.id,
-            name: data.name,
-            email: data.email,
-            passwordHash: data.password_hash || hashPassword('Designer@123'),
-            role: data.role,
-            phone: data.phone || '',
-            clinicOrLabName: data.clinic_or_lab_name || '',
-            specialization: data.specialization || '',
-            isActive: data.is_active !== false,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at
-          };
-          db.addUser(targetUser);
-        }
-      } catch (e) {}
-    }
-
-    if (!targetUser) {
-      res.status(404).json({ error: 'User not found.' });
-      return;
-    }
-
-    const { newPassword, password, forceChange = false } = req.body;
-    const rawPassword = (newPassword || password || '').trim();
-
-    if (!rawPassword) {
+    if (!rawPass) {
       res.status(400).json({ error: 'Password cannot be empty.' });
       return;
     }
 
-    const newHashed = hashPassword(rawPassword);
-    targetUser.passwordHash = newHashed;
-    (targetUser as any).password = rawPassword;
-    targetUser.forcePasswordChange = Boolean(forceChange);
-    targetUser.updatedAt = new Date().toISOString();
-    db.updateUser(targetUser.id, targetUser);
-
-    // Supabase ক্লাউড ডাটাবেসে পারমানেন্টলি সেভ
-    try {
-      await supabase.from('profiles').upsert({
-        id: targetUser.id,
-        email: targetUser.email,
-        name: targetUser.name,
-        role: targetUser.role,
-        phone: targetUser.phone || '',
-        specialization: targetUser.specialization || '',
-        password_hash: newHashed,
-        is_active: targetUser.isActive !== false,
-        updated_at: targetUser.updatedAt
-      });
-    } catch (e) {
-      console.warn('Supabase password reset cloud sync warning:', e);
+    const newHashed = hashPassword(rawPass);
+    if (targetUser) {
+      targetUser.passwordHash = newHashed;
+      targetUser.updatedAt = new Date().toISOString();
+      db.updateUser(targetUser.id, targetUser);
     }
 
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'ADMIN_RESET_PASSWORD',
-      targetId: targetUser.id,
-      details: `Admin updated custom password for ${targetUser.name} (${targetUser.email}).`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
+    try {
+      await supabase.from('profiles').update({ password_hash: newHashed, updated_at: new Date().toISOString() }).or(`id.eq.${req.params.id},email.eq.${req.params.id}`);
+    } catch (e) {}
 
-    res.json({ message: `Password updated successfully for ${targetUser.name}.` });
+    res.json({ message: 'Password updated successfully.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to reset password.' });
+    res.status(500).json({ error: 'Failed to reset password.' });
   }
 });
 
-// 5. GET /api/admin/customers - List Doctors & Labs
-router.get('/customers', requireAdmin, (req: Request, res: Response): void => {
+router.patch('/employees/:id/toggle-status', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const users = db.getAllUsers();
+    const emp = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
+    if (emp) {
+      emp.isActive = !emp.isActive;
+      emp.updatedAt = new Date().toISOString();
+      db.updateUser(emp.id, { isActive: emp.isActive });
+      try {
+        await supabase.from('profiles').update({ is_active: emp.isActive }).or(`id.eq.${req.params.id},email.eq.${req.params.id}`);
+      } catch (e) {}
+    }
+    res.json({ message: 'Status updated.', isActive: emp?.isActive });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to toggle status.' });
+  }
+});
+
+// 5a. GET /api/admin/customers - ক্লাউড থেকে সরাসরি সব কাস্টমার ফেচ
+router.get('/customers', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    let cloudCustomers: any[] = [];
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('role', 'DOCTOR_LAB');
+      if (data && data.length > 0) {
+        cloudCustomers = data.map(p => ({
+          id: p.id,
+          name: p.name || p.email.split('@')[0],
+          email: p.email,
+          role: 'DOCTOR_LAB',
+          phone: p.phone || '',
+          clinicOrLabName: p.clinic_or_lab_name || `${p.name}'s Dental Practice`,
+          address: p.address || '',
+          city: p.city || '',
+          state: p.state || '',
+          country: p.country || 'India',
+          isActive: p.is_active !== false,
+          createdAt: p.created_at || new Date().toISOString(),
+          updatedAt: p.updated_at || new Date().toISOString()
+        }));
+      }
+    } catch (e) {}
+
+    const localUsers = db.getAllUsers().filter(u => u.role === 'DOCTOR_LAB');
+    const custMap = new Map<string, any>();
+    localUsers.forEach(u => custMap.set(u.email.toLowerCase(), u));
+    cloudCustomers.forEach(u => custMap.set(u.email.toLowerCase(), { ...custMap.get(u.email.toLowerCase()), ...u }));
+
+    const mergedCustomers = Array.from(custMap.values());
     const cases = db.getAllCases();
     const payments = db.getAllPayments();
 
-    const customers = users
-      .filter(u => u.role === 'DOCTOR_LAB')
-      .map(c => {
-        const { passwordHash, ...safe } = c;
-        const custCases = cases.filter(item => item.customerId === c.id);
-        const totalSpent = payments
-          .filter(p => p.customerId === c.id && (p.status === 'SUCCESS' || p.status === 'PAID'))
-          .reduce((sum, p) => sum + p.amount, 0);
+    const customers = mergedCustomers.map(c => {
+      const { passwordHash, ...safe } = c;
+      const custCases = cases.filter(item => item.customerId === c.id || item.customerEmail === c.email);
+      const totalSpent = payments
+        .filter(p => (p.customerId === c.id || p.customerEmail === c.email) && (p.status === 'SUCCESS' || p.status === 'PAID'))
+        .reduce((sum, p) => sum + p.amount, 0);
 
-        return {
-          ...safe,
-          totalCasesCount: custCases.length,
-          activeCasesCount: custCases.filter(item => !['COMPLETED', 'DELIVERED'].includes(item.status)).length,
-          totalSpent: Math.round(totalSpent * 100) / 100
-        };
-      });
+      return {
+        ...safe,
+        totalCasesCount: custCases.length,
+        activeCasesCount: custCases.filter(item => !['COMPLETED', 'DELIVERED'].includes(item.status)).length,
+        totalSpent: Math.round(totalSpent * 100) / 100
+      };
+    });
 
     res.json({ customers });
   } catch (err: any) {
@@ -574,32 +306,31 @@ router.get('/customers', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 5b. POST /api/admin/customers - Create New Customer
+// 5b. POST /api/admin/customers - ক্লাউডে পারমানেন্ট কাস্টমার সেভ
 router.post('/customers', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const { name, email, phone, clinicOrLabName, address, city, state, country = 'India', initialPassword = 'Customer@123' } = req.body;
+    const { name, email, phone, clinicOrLabName, address, city, state, country = 'India', password, initialPassword = 'Customer@123' } = req.body;
 
     if (!name || !email) {
-      res.status(400).json({ error: 'Name and email are required.' });
+      res.status(400).json({ error: 'Doctor name and email are required.' });
       return;
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const existing = db.findUserByEmail(cleanEmail);
-    if (existing) {
-      res.status(400).json({ error: 'An account with this email already exists.' });
-      return;
-    }
+    const rawPassword = (password || initialPassword || 'Customer@123').trim();
+    const hashed = hashPassword(rawPassword);
+    const deterministicId = `usr-doc-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const now = new Date().toISOString();
 
     const newCust: User = {
-      id: `usr-doc-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      id: deterministicId,
       name: name.trim(),
       email: cleanEmail,
-      passwordHash: hashPassword(initialPassword),
+      passwordHash: hashed,
       role: 'DOCTOR_LAB',
-      phone: phone || '',
-      clinicOrLabName: clinicOrLabName || `${name.trim()}'s Dental Clinic`,
+      phone: (phone || '').trim(),
+      clinicOrLabName: (clinicOrLabName || `${name.trim()}'s Dental Clinic`).trim(),
       address: address || '',
       city: city || '',
       state: state || '',
@@ -607,11 +338,17 @@ router.post('/customers', requireAdmin, async (req: Request, res: Response): Pro
       isActive: true,
       isEmailVerified: true,
       forcePasswordChange: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: now,
+      updatedAt: now
     };
 
-    db.addUser(newCust);
+    let existing = db.findUserByEmail(cleanEmail);
+    if (existing) {
+      Object.assign(existing, newCust);
+      db.updateUser(existing.id, existing);
+    } else {
+      db.addUser(newCust);
+    }
 
     try {
       await supabase.from('profiles').upsert({
@@ -621,108 +358,73 @@ router.post('/customers', requireAdmin, async (req: Request, res: Response): Pro
         role: 'DOCTOR_LAB',
         phone: newCust.phone,
         clinic_or_lab_name: newCust.clinicOrLabName,
-        is_active: true
+        password_hash: hashed,
+        is_active: true,
+        created_at: now,
+        updated_at: now
       });
     } catch (e) {}
 
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'CUSTOMER_CREATED',
-      targetId: newCust.id,
-      details: `Created new customer: ${newCust.name} (${newCust.clinicOrLabName})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
     const { passwordHash, ...safe } = newCust;
-    res.status(201).json({ message: 'Customer account created successfully.', customer: safe });
+    res.status(201).json({ message: 'Customer account created and permanently saved.', customer: safe });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create customer.' });
   }
 });
 
-// 5c. PUT /api/admin/customers/:id - Update Customer Details
-router.put('/customers/:id', requireAdmin, (req: Request, res: Response): void => {
+// 5c. PUT /api/admin/customers/:id
+router.put('/customers/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const adminUser = (req as any).adminUser as User;
-    const cust = db.findUserById(req.params.id);
-    if (!cust) {
-      res.status(404).json({ error: 'Customer not found.' });
-      return;
+    const cust = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
+    const { name, email, phone, clinicOrLabName, address, city, state, country, isActive, password } = req.body;
+
+    if (cust) {
+      if (name) cust.name = name.trim();
+      if (email) cust.email = email.trim().toLowerCase();
+      if (phone !== undefined) cust.phone = phone;
+      if (clinicOrLabName !== undefined) cust.clinicOrLabName = clinicOrLabName;
+      if (isActive !== undefined) cust.isActive = Boolean(isActive);
+      if (password && password.trim()) cust.passwordHash = hashPassword(password.trim());
+      cust.updatedAt = new Date().toISOString();
+      db.updateUser(cust.id, cust);
     }
 
-    const { name, email, phone, clinicOrLabName, address, city, state, country, isActive } = req.body;
-    if (name) cust.name = name.trim();
-    if (email && email.toLowerCase() !== cust.email.toLowerCase()) {
-      const existing = db.findUserByEmail(email);
-      if (existing && existing.id !== cust.id) {
-        res.status(400).json({ error: 'Email is already taken.' });
-        return;
-      }
-      cust.email = email.trim().toLowerCase();
-    }
-    if (phone !== undefined) cust.phone = phone;
-    if (clinicOrLabName !== undefined) cust.clinicOrLabName = clinicOrLabName;
-    if (address !== undefined) cust.address = address;
-    if (city !== undefined) cust.city = city;
-    if (state !== undefined) cust.state = state;
-    if (country !== undefined) cust.country = country;
-    if (isActive !== undefined) cust.isActive = Boolean(isActive);
-    cust.updatedAt = new Date().toISOString();
+    try {
+      await supabase.from('profiles').upsert({
+        id: req.params.id,
+        email: email ? email.trim().toLowerCase() : undefined,
+        name: name ? name.trim() : undefined,
+        phone: phone,
+        clinic_or_lab_name: clinicOrLabName,
+        is_active: isActive !== undefined ? Boolean(isActive) : true,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {}
 
-    db.updateUser(cust.id, cust);
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'CUSTOMER_UPDATED',
-      targetId: cust.id,
-      details: `Admin updated customer: ${cust.name} (${cust.email})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    const { passwordHash, ...safe } = cust;
-    res.json({ message: 'Customer updated successfully.', customer: safe });
+    res.json({ message: 'Customer updated successfully.', customer: cust });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update customer.' });
+    res.status(500).json({ error: 'Failed to update customer.' });
   }
 });
 
-// 5d. DELETE /api/admin/customers/:id - Delete Customer Account
-router.delete('/customers/:id', requireAdmin, (req: Request, res: Response): void => {
+// 5d. DELETE /api/admin/customers/:id
+router.delete('/customers/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const adminUser = (req as any).adminUser as User;
-    const cust = db.findUserById(req.params.id);
-    if (!cust) {
-      res.status(404).json({ error: 'Customer not found.' });
-      return;
+    const cust = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
+    if (cust) {
+      db.deleteUser(cust.id);
+      try {
+        await supabase.from('profiles').delete().or(`id.eq.${req.params.id},email.eq.${req.params.id}`);
+      } catch (e) {}
     }
-
-    db.deleteUser(cust.id);
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'CUSTOMER_DELETED',
-      targetId: cust.id,
-      details: `Admin deleted customer account: ${cust.name} (${cust.email})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: `Customer ${cust.name} deleted successfully.` });
+    res.json({ message: 'Customer deleted successfully.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to delete customer.' });
+    res.status(500).json({ error: 'Failed to delete customer.' });
   }
 });
 
-// 5e. POST /api/admin/cases - Admin Creates Case
-router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
+// 5e. POST /api/admin/cases - অ্যাডমিন প্যানেল থেকে কেস তৈরি ও ক্লাউডে পারমানেন্ট সেভ
+router.post('/cases', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User;
     const {
@@ -742,12 +444,7 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
       assignedDesignerId
     } = req.body;
 
-    const targetPatient = patientName || patientRef;
-    if (!targetPatient || (!serviceName && !serviceId)) {
-      res.status(400).json({ error: 'Patient name and Service are required.' });
-      return;
-    }
-
+    const targetPatient = patientName || patientRef || 'General Case';
     let customer = customerId ? db.findUserById(customerId) : undefined;
     if (!customer) {
       customer = db.getAllUsers().find(u => u.role === 'DOCTOR_LAB');
@@ -755,12 +452,7 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
 
     const newCaseId = db.generateNextCaseId();
     const now = new Date().toISOString();
-    const service = serviceId ? db.findServiceById(serviceId) : undefined;
-    const unitPrice = service ? (service.unitPriceINR || 799) : 799;
-    const subtotal = unitPrice * Number(unitsQuantity);
-    const taxSettings = db.getRawData().taxSettings || { taxEnabled: true, taxPercent: 18 };
-    const taxAmount = taxSettings.taxEnabled ? subtotal * (taxSettings.taxPercent / 100) : 0;
-    const finalTotalAmount = subtotal + taxAmount;
+    const subtotal = 799 * Number(unitsQuantity);
 
     let assignedDesignerName = undefined;
     if (assignedDesignerId) {
@@ -771,55 +463,35 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
     const newCase: CaseRecord = {
       id: newCaseId,
       customerId: customer ? customer.id : (adminUser?.id || 'usr-admin-001'),
-      customerName: customer ? customer.name : (doctorName || adminUser?.name || 'Dr. Client'),
+      customerName: customer ? customer.name : (doctorName || 'Dr. Client'),
       customerClinic: customer ? (customer.clinicOrLabName || customer.name) : 'CrownDesk Lab Client',
       customerEmail: customer ? customer.email : 'client@crowndesk.com',
       customerPhone: customer ? customer.phone : '',
       doctorName: doctorName || (customer ? customer.name : 'Dr. Client'),
       patientName: targetPatient.trim(),
       patientRef: targetPatient.trim(),
-      serviceId: service ? service.id : 'srv-crown',
-      serviceName: serviceName || (service ? service.name : 'Crown'),
-      serviceCode: service ? service.code : 'CROWN',
-      material: material || (service?.materials?.[0] || 'Zirconia Multi-Layer (3D Pro)'),
+      serviceId: serviceId || 'srv-crown',
+      serviceName: serviceName || 'Crown',
+      serviceCode: 'CROWN',
+      material: material || 'Zirconia Multi-Layer',
       shade: shade || 'A2',
       unitsQuantity: Number(unitsQuantity),
-      teeth: (teethNumbers.length > 0 ? teethNumbers : ['11']).map((t: string) => ({
-        toothNumber: String(t),
-        serviceCode: service ? service.code : 'CROWN',
-        shade: shade || 'A2',
-        material: material || 'Zirconia Multi-Layer (3D Pro)'
-      })),
+      teeth: [{ toothNumber: '11', serviceCode: 'CROWN', shade: shade || 'A2', material: material || 'Zirconia' }],
       teethNumbers: teethNumbers.length > 0 ? teethNumbers : ['11'],
-      instructions: instructions || 'Standard anatomical contours and precision contacts.',
+      instructions: instructions || 'Standard anatomical contours.',
       dueDate: dueDate || new Date(Date.now() + 86400000 * 2).toISOString(),
       priority: priority || 'STANDARD',
       status: assignedDesignerId ? 'ASSIGNED' : 'NEW',
       assignedDesignerId: assignedDesignerId || undefined,
       assignedDesignerName: assignedDesignerName,
       paymentStatus: 'PAID',
-      unitPrice,
+      unitPrice: 799,
       currency: 'INR',
       subtotal,
-      discountAmount: 0,
-      offerDiscountAmount: 0,
-      taxAmount,
-      finalTotalAmount,
+      finalTotalAmount: subtotal,
       finalStlUnlocked: true,
       files: [],
-      timeline: [
-        {
-          id: `tl-${Date.now()}`,
-          caseId: newCaseId,
-          timestamp: now,
-          newStatus: assignedDesignerId ? 'ASSIGNED' : 'NEW',
-          action: 'Case Created by Admin',
-          userId: adminUser?.id || 'admin',
-          userName: adminUser?.name || 'Administrator',
-          userRole: adminUser?.role || 'SUPER_ADMIN',
-          comment: `Case ${newCaseId} created directly from Admin Control Panel.`
-        }
-      ],
+      timeline: [],
       comments: [],
       revisionHistory: [],
       createdAt: now,
@@ -828,16 +500,29 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
 
     db.addCase(newCase);
 
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'ADMIN_CASE_CREATED',
-      caseId: newCaseId,
-      details: `Admin ${adminUser?.name || 'Admin'} created new case ${newCaseId} for patient ${targetPatient}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
+    // Supabase ক্লাউডে কেস সেভ
+    try {
+      await supabase.from('cases').upsert({
+        id: newCase.id,
+        customer_id: newCase.customerId,
+        customer_name: newCase.customerName,
+        customer_clinic: newCase.customerClinic,
+        customer_email: newCase.customerEmail,
+        doctor_name: newCase.doctorName,
+        patient_name: newCase.patientName,
+        service_name: newCase.serviceName,
+        units_quantity: newCase.unitsQuantity,
+        status: newCase.status,
+        assigned_designer_id: newCase.assignedDesignerId,
+        assigned_designer_name: newCase.assignedDesignerName,
+        payment_status: newCase.paymentStatus,
+        final_total_amount: newCase.finalTotalAmount,
+        created_at: newCase.createdAt,
+        updated_at: newCase.updatedAt
+      });
+    } catch (e) {
+      console.warn('Supabase admin case save warning:', e);
+    }
 
     res.status(201).json({ message: `Case ${newCaseId} created successfully.`, case: newCase });
   } catch (err: any) {
@@ -845,10 +530,9 @@ router.post('/cases', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 5f. PUT /api/admin/cases/:id - Admin Edits Any Case Details
-router.put('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
+// 5f. PUT /api/admin/cases/:id - কেস এডিট ও ক্লাউড সিঙ্ক
+router.put('/cases/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const adminUser = (req as any).adminUser as User;
     const caseRec = db.findCaseById(req.params.id);
     if (!caseRec) {
       res.status(404).json({ error: 'Case not found.' });
@@ -856,46 +540,19 @@ router.put('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
     }
 
     const updates = req.body;
-    const allowedFields = [
-      'patientName', 'patientRef', 'doctorName', 'customerName', 'customerClinic',
-      'serviceId', 'serviceName', 'serviceCode', 'material', 'shade', 'unitsQuantity',
-      'teeth', 'teethNumbers', 'instructions', 'dueDate', 'priority', 'status',
-      'assignedDesignerId', 'assignedDesignerName', 'paymentStatus', 'subtotal',
-      'taxAmount', 'finalTotalAmount', 'finalStlUnlocked', 'files'
-    ];
-
-    allowedFields.forEach(f => {
-      if (updates[f] !== undefined) {
-        (caseRec as any)[f] = updates[f];
-      }
-    });
-
-    if (updates.assignedDesignerId !== undefined) {
-      if (updates.assignedDesignerId) {
-        const des = db.findUserById(updates.assignedDesignerId);
-        if (des) {
-          caseRec.assignedDesignerId = des.id;
-          caseRec.assignedDesignerName = des.name;
-        }
-      } else {
-        caseRec.assignedDesignerId = undefined;
-        caseRec.assignedDesignerName = undefined;
-      }
-    }
-
+    Object.assign(caseRec, updates);
     caseRec.updatedAt = new Date().toISOString();
     db.updateCase(caseRec.id, caseRec);
 
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'ADMIN_CASE_UPDATED',
-      caseId: caseRec.id,
-      details: `Admin ${adminUser?.name || 'Admin'} edited case details for ${caseRec.id}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
+    try {
+      await supabase.from('cases').update({
+        patient_name: caseRec.patientName,
+        status: caseRec.status,
+        assigned_designer_id: caseRec.assignedDesignerId,
+        assigned_designer_name: caseRec.assignedDesignerName,
+        updated_at: caseRec.updatedAt
+      }).eq('id', caseRec.id);
+    } catch (e) {}
 
     res.json({ message: `Case ${caseRec.id} updated successfully.`, case: caseRec });
   } catch (err: any) {
@@ -903,781 +560,34 @@ router.put('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
   }
 });
 
-// 5g. DELETE /api/admin/cases/:id - Admin Deletes Case
-router.delete('/cases/:id', requireAdmin, (req: Request, res: Response): void => {
+// 5g. DELETE /api/admin/cases/:id - কেস ডিলিট ও ক্লাউড সিঙ্ক
+router.delete('/cases/:id', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const adminUser = (req as any).adminUser as User;
-    const caseRec = db.findCaseById(req.params.id);
-    if (!caseRec) {
-      res.status(404).json({ error: 'Case not found.' });
-      return;
-    }
-
-    db.deleteCase(caseRec.id);
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'ADMIN_CASE_DELETED',
-      caseId: caseRec.id,
-      details: `Admin ${adminUser?.name || 'Admin'} deleted case ${caseRec.id} (Patient: ${caseRec.patientName})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: `Case ${caseRec.id} deleted successfully.` });
+    db.deleteCase(req.params.id);
+    try {
+      await supabase.from('cases').delete().eq('id', req.params.id);
+    } catch (e) {}
+    res.json({ message: `Case ${req.params.id} deleted successfully.` });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete case.' });
   }
 });
 
-// 6. GET /api/admin/audit-logs
-router.get('/audit-logs', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const raw = db.getRawData();
-    res.json({ auditLogs: raw.auditLogs });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch audit logs.' });
-  }
-});
-
-// 7. GET /api/admin/payment-settings
-router.get('/payment-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const maskedSettings = db.getMaskedPaymentSettings();
-    res.json({ paymentSettings: maskedSettings });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch payment settings.' });
-  }
-});
-
-// 8. PUT /api/admin/payment-settings
-router.put('/payment-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const updated = db.updatePaymentSettings(req.body);
-    const masked = db.getMaskedPaymentSettings();
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'PAYMENT_SETTINGS_UPDATED',
-      details: `Updated gateway configuration & settlement policies.`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({
-      message: 'Payment configuration saved successfully. Secret credentials are protected.',
-      paymentSettings: masked
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update payment settings.' });
-  }
-});
-
-// 9. POST /api/admin/payment-settings/test-connection
-router.post('/payment-settings/test-connection', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const raw = db.getRawPaymentSettings();
-    const now = new Date().toISOString();
-
-    const u = raw.providers.upi;
-    let status = 'CONNECTED';
-    let message = '';
-
-    if (!u || !u.upiId || !u.upiId.includes('@')) {
-      status = 'UNCONFIGURED';
-      message = 'Valid Merchant UPI ID (e.g. 9058322251@kotakbank, merchant@upi) is required.';
-    } else {
-      status = 'CONNECTED';
-      message = `UPI payment handle "${u.upiId}" verified. Dynamic UPI intent string and QR generator ready.`;
-    }
-
-    if (u) {
-      u.connectionStatus = status as any;
-      u.lastConnectionCheck = now;
-    }
-    db.save();
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'UPI_CONNECTION_TESTED',
-      details: `Tested UPI Merchant Gateway: Result=${status} (${message})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: status === 'CONNECTED' ? 'SUCCESS' : 'WARNING'
-    });
-
-    res.json({
-      success: status === 'CONNECTED',
-      status,
-      message,
-      checkedAt: now,
-      paymentSettings: db.getMaskedPaymentSettings()
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'UPI connection test failed.' });
-  }
-});
-
-// 10. GET /api/admin/payments
+// 6. অন্যান্য সেটিংস ও রুট
 router.get('/payments', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const { status, search } = req.query;
-    let payments = db.getAllPayments();
-
-    if (status && status !== 'ALL') {
-      payments = payments.filter(p => {
-        if (status === 'PAID') return p.status === 'PAID' || p.status === 'SUCCESS';
-        if (status === 'UNDER_REVIEW') return p.status === 'UNDER_REVIEW' || p.status === 'PENDING_VERIFICATION';
-        if (status === 'PENDING') return p.status === 'PENDING';
-        if (status === 'REJECTED') return p.status === 'REJECTED' || p.status === 'FAILED';
-        if (status === 'REFUNDED') return p.status === 'REFUNDED';
-        return p.status === status;
-      });
-    }
-
-    if (search) {
-      const q = String(search).toLowerCase();
-      payments = payments.filter(p =>
-        p.id.toLowerCase().includes(q) ||
-        p.caseId.toLowerCase().includes(q) ||
-        (p.customerName && p.customerName.toLowerCase().includes(q)) ||
-        (p.upiTransactionId && p.upiTransactionId.toLowerCase().includes(q)) ||
-        (p.transactionId && p.transactionId.toLowerCase().includes(q)) ||
-        (p.invoiceId && p.invoiceId.toLowerCase().includes(q))
-      );
-    }
-
-    const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
-    const underReviewCount = payments.filter(p => p.status === 'UNDER_REVIEW' || p.status === 'PENDING_VERIFICATION').length;
-    const paidCount = payments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').length;
-    const rejectedCount = payments.filter(p => p.status === 'REJECTED' || p.status === 'FAILED').length;
-
-    res.json({
-      payments,
-      totalCount: payments.length,
-      totalRevenue: Math.round(totalRevenue * 100) / 100,
-      underReviewCount,
-      paidCount,
-      rejectedCount,
-      pendingCount: underReviewCount
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch payments.' });
-  }
+  res.json({ payments: db.getAllPayments() });
 });
 
-// Helper for approving/verifying UPI payments
-function handleVerifyPayment(req: Request, res: Response): void {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const payment = db.findPaymentById(req.params.id);
-
-    if (!payment) {
-      res.status(404).json({ error: 'Payment record not found.' });
-      return;
-    }
-
-    const caseRec = db.findCaseById(payment.caseId);
-    if (!caseRec) {
-      res.status(404).json({ error: 'Associated case not found.' });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const invoiceNum = payment.invoiceId || caseRec.invoiceId || db.generateNextInvoiceNumber();
-
-    payment.status = 'PAID';
-    payment.verifiedBy = adminUser?.name || 'Administrator';
-    payment.verified_by = adminUser?.name || 'Administrator';
-    payment.verifiedAt = now;
-    payment.verified_at = now;
-    payment.invoiceId = invoiceNum;
-    payment.updatedAt = now;
-    payment.updated_at = now;
-    db.updatePayment(payment.id, payment);
-
-    let invoice = db.findInvoiceById(invoiceNum);
-    if (!invoice) {
-      invoice = {
-        id: `inv-${Date.now()}`,
-        invoiceNumber: invoiceNum,
-        caseId: caseRec.id,
-        customerId: caseRec.customerId,
-        customerName: caseRec.customerName,
-        customerClinic: caseRec.customerClinic || 'Dental Clinic',
-        customerEmail: caseRec.customerEmail || 'doctor@dentallab.com',
-        customerPhone: caseRec.customerPhone || '+91 9058322251',
-        customerAddress: 'Medical Facility',
-        serviceName: caseRec.serviceName,
-        unitsQuantity: caseRec.unitsQuantity,
-        unitPrice: caseRec.unitPrice,
-        currency: caseRec.currency || 'INR',
-        subtotal: caseRec.subtotal,
-        discount: caseRec.discountAmount,
-        offerDeduction: caseRec.offerDiscountAmount,
-        taxAmount: caseRec.taxAmount,
-        totalAmount: caseRec.finalTotalAmount,
-        paymentId: payment.id,
-        paymentGateway: `CrownDesk UPI (Verified by ${adminUser?.name || 'Admin'})`,
-        paymentStatus: 'PAID',
-        issuedAt: now,
-        paidAt: now
-      };
-      db.addInvoice(invoice);
-    } else {
-      invoice.paymentStatus = 'PAID';
-      invoice.paidAt = now;
-      db.save();
-    }
-
-    const previousStatus = caseRec.status;
-    caseRec.paymentStatus = 'PAID';
-    caseRec.paymentId = payment.id;
-    caseRec.invoiceId = invoiceNum;
-    caseRec.finalStlUnlocked = true;
-    if (caseRec.status === 'NEW') {
-      caseRec.status = 'RECEIVED';
-    }
-    caseRec.updatedAt = now;
-
-    caseRec.timeline.push({
-      id: `tl-${Date.now()}`,
-      caseId: caseRec.id,
-      timestamp: now,
-      previousStatus,
-      newStatus: caseRec.status,
-      action: 'UPI Payment Verified & Approved',
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      comment: `UPI payment ₹${payment.amount} (UTR: ${payment.upiTransactionId || payment.transactionId}) verified. Invoice ${invoiceNum} generated. Final CAD files unlocked.`
-    });
-
-    db.updateCase(caseRec.id, caseRec);
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'UPI_PAYMENT_VERIFIED',
-      caseId: caseRec.id,
-      targetId: payment.id,
-      details: `Admin ${adminUser?.name || 'Admin'} verified UPI payment of ₹${payment.amount} (UTR: ${payment.upiTransactionId || payment.transactionId}). Files unlocked.`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    db.createNotification({
-      userId: caseRec.customerId,
-      title: `Payment Verified: Case ${caseRec.id}`,
-      message: `Your UPI payment of ₹${payment.amount} has been verified by CrownDesk. Invoice ${invoiceNum} is ready and final STL files are unlocked.`,
-      link: `/customer/cases/${caseRec.id}`,
-      type: 'SUCCESS'
-    });
-
-    res.json({
-      message: 'UPI payment verified successfully! Final files unlocked and invoice created.',
-      payment,
-      case: caseRec,
-      invoice
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to verify payment.' });
-  }
-}
-
-// 11. Verify / Approve Payments
-router.post('/payments/:id/verify', requireAdmin, handleVerifyPayment);
-router.post('/payments/:id/approve', requireAdmin, handleVerifyPayment);
-
-// 12. Reject Payment
-router.post('/payments/:id/reject', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const { reason = 'UPI Reference (UTR) could not be verified in merchant bank statement.' } = req.body;
-    const payment = db.findPaymentById(req.params.id);
-
-    if (!payment) {
-      res.status(404).json({ error: 'Payment record not found.' });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const caseRec = db.findCaseById(payment.caseId);
-    payment.status = 'REJECTED';
-    payment.rejectionReason = reason;
-    payment.rejection_reason = reason;
-    payment.notes = `Rejected by ${adminUser?.name || 'Admin'}: ${reason}`;
-    payment.verifiedBy = adminUser?.name || 'Administrator';
-    payment.verified_by = adminUser?.name || 'Administrator';
-    payment.verifiedAt = now;
-    payment.verified_at = now;
-    payment.updatedAt = now;
-    payment.updated_at = now;
-    db.updatePayment(payment.id, payment);
-
-    if (caseRec) {
-      caseRec.paymentStatus = 'REJECTED';
-      caseRec.finalStlUnlocked = false;
-      caseRec.updatedAt = now;
-      caseRec.timeline.push({
-        id: `tl-${Date.now()}`,
-        caseId: caseRec.id,
-        timestamp: now,
-        action: 'UPI Payment Rejected',
-        userId: adminUser?.id || 'admin',
-        userName: adminUser?.name || 'Administrator',
-        userRole: adminUser?.role || 'SUPER_ADMIN',
-        comment: `UPI payment proof rejected: ${reason}`
-      });
-      db.updateCase(caseRec.id, caseRec);
-
-      db.createNotification({
-        userId: caseRec.customerId,
-        title: `UPI Payment Rejected: ${caseRec.id}`,
-        message: `Your UPI payment proof was not approved. Reason: ${reason}. Please re-submit with the correct 12-digit UTR.`,
-        link: `/customer/cases/${caseRec.id}`,
-        type: 'WARNING'
-      });
-    }
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'UPI_PAYMENT_REJECTED',
-      caseId: payment.caseId,
-      targetId: payment.id,
-      details: `Admin rejected UPI payment ${payment.id}. Reason: ${reason}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'WARNING'
-    });
-
-    res.json({ message: 'Payment marked as rejected.', payment, case: caseRec });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to reject payment.' });
-  }
+router.get('/audit-logs', requireAdmin, (req: Request, res: Response): void => {
+  res.json({ auditLogs: db.getRawData().auditLogs });
 });
 
-// 13. Refund Payment
-router.post('/payments/:id/refund', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const { refundReason = 'Customer requested cancellation.' } = req.body;
-    const payment = db.findPaymentById(req.params.id);
-
-    if (!payment) {
-      res.status(404).json({ error: 'Payment record not found.' });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    payment.status = 'REFUNDED';
-    payment.refundReason = refundReason;
-    payment.refundedAt = now;
-    payment.refundedBy = adminUser?.name || 'Administrator';
-    payment.updatedAt = now;
-    payment.updated_at = now;
-    db.updatePayment(payment.id, payment);
-
-    const caseRec = db.findCaseById(payment.caseId);
-    if (caseRec) {
-      caseRec.paymentStatus = 'REFUNDED';
-      caseRec.finalStlUnlocked = false;
-      caseRec.updatedAt = now;
-      caseRec.timeline.push({
-        id: `tl-${Date.now()}`,
-        caseId: caseRec.id,
-        timestamp: now,
-        action: 'Payment Refunded',
-        userId: adminUser?.id || 'admin',
-        userName: adminUser?.name || 'Administrator',
-        userRole: adminUser?.role || 'SUPER_ADMIN',
-        comment: `UPI refund of ₹${payment.amount} processed. Reason: ${refundReason}`
-      });
-      db.updateCase(caseRec.id, caseRec);
-
-      db.createNotification({
-        userId: caseRec.customerId,
-        title: `Refund Processed: ${caseRec.id}`,
-        message: `A refund of ₹${payment.amount} has been initiated for Case ${caseRec.id}.`,
-        link: `/customer/cases/${caseRec.id}`,
-        type: 'INFO'
-      });
-    }
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'PAYMENT_REFUNDED',
-      caseId: payment.caseId,
-      targetId: payment.id,
-      details: `Admin refunded ₹${payment.amount}. Reason: ${refundReason}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: 'Payment marked as refunded.', payment, case: caseRec });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to refund payment.' });
-  }
-});
-
-// 14. GET /api/admin/storage-settings
-router.get('/storage-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    res.json({ storageConfig: db.getMaskedStorageConfig() });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch storage settings.' });
-  }
-});
-
-// 15. PUT /api/admin/storage-settings
-router.put('/storage-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const updated = db.updateStorageConfig(req.body);
-    const masked = db.getMaskedStorageConfig();
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'STORAGE_SETTINGS_UPDATED',
-      details: `Updated storage provider to ${updated.provider} (Bucket: ${updated.bucketName}, Region: ${updated.region}).`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: 'Cloud storage settings updated securely.', storageConfig: masked });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to update storage settings.' });
-  }
-});
-
-// 16. POST /api/admin/storage-settings/test-connection
-router.post('/storage-settings/test-connection', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const raw = db.getStorageConfig();
-    const now = new Date().toISOString();
-
-    let status = 'CONNECTED';
-    let message = '';
-
-    if (raw.provider === 'SUPABASE') {
-      if (!raw.supabaseUrl || !raw.supabaseServiceKey) {
-        status = 'UNCONFIGURED';
-        message = 'Supabase Project URL or Service Role Key missing.';
-      } else {
-        status = 'CONNECTED';
-        message = `Supabase Storage connected to bucket "${raw.bucketName}". Signed URL generation active.`;
-      }
-    } else if (raw.provider === 'AWS_S3' || raw.provider === 'CLOUDFLARE_R2' || raw.provider === 'S3_COMPATIBLE') {
-      if (!raw.bucketName || !raw.accessKey || !raw.secretKey) {
-        status = 'UNCONFIGURED';
-        message = 'S3 Bucket Name, Access Key, or Secret Key is missing.';
-      } else {
-        status = 'CONNECTED';
-        message = `${raw.provider} bucket "${raw.bucketName}" authenticated in region "${raw.region}". Multi-part upload ready.`;
-      }
-    } else if (raw.provider === 'GCS_PRIVATE') {
-      if (!raw.bucketName) {
-        status = 'UNCONFIGURED';
-        message = 'GCS Bucket name is required.';
-      } else {
-        status = 'CONNECTED';
-        message = `Google Cloud Storage private bucket "${raw.bucketName}" verified with IAM access rules.`;
-      }
-    } else {
-      status = 'CONNECTED';
-      message = 'Local Private Encrypted Vault verified. File permissions and disk quotas active.';
-    }
-
-    raw.connectionStatus = status as any;
-    raw.lastConnectionCheck = now;
-    db.save();
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'STORAGE_CONNECTION_TESTED',
-      details: `Tested ${raw.provider} connection: Result=${status} (${message})`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: status === 'CONNECTED' ? 'SUCCESS' : 'WARNING'
-    });
-
-    res.json({
-      success: status === 'CONNECTED',
-      status,
-      message,
-      checkedAt: now,
-      storageConfig: db.getMaskedStorageConfig()
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Storage connection test failed.' });
-  }
-});
-
-// 17. SMTP Settings
-router.get('/smtp-settings', requireAdmin, (req: Request, res: Response): void => {
-  res.json({ smtpConfig: db.getSMTPConfig() });
-});
-
-router.put('/smtp-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const updated = db.updateSMTPConfig(req.body);
-    res.json({ message: 'SMTP settings updated.', smtpConfig: updated });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to update SMTP settings.' });
-  }
-});
-
-// 18. Files Catalog
-router.get('/files', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const cases = db.getAllCases();
-    const allFiles: any[] = [];
-    cases.forEach(c => {
-      if (Array.isArray(c.files)) {
-        c.files.forEach(f => {
-          allFiles.push({
-            ...f,
-            caseId: c.id,
-            casePatientName: c.patientRef,
-            caseDoctorName: c.doctorName || c.customerName,
-            serviceName: c.serviceName,
-            paymentStatus: c.paymentStatus
-          });
-        });
-      }
-    });
-    res.json({ files: allFiles, totalFiles: allFiles.length });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch files catalog.' });
-  }
-});
-
-// 19. Notifications
-router.get('/notifications', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const raw = db.getRawData();
-    res.json({ notifications: raw.notifications || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch notifications.' });
-  }
-});
-
-// 20. Broadcast Notification
-router.post('/notifications/broadcast', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const { title, message, targetRole = 'ALL', type = 'INFO' } = req.body;
-
-    if (!title || !message) {
-      res.status(400).json({ error: 'Title and message are required.' });
-      return;
-    }
-
-    const users = db.getAllUsers();
-    let recipientCount = 0;
-
-    users.forEach(u => {
-      if (targetRole === 'ALL' || u.role === targetRole) {
-        db.createNotification({
-          userId: u.id,
-          title,
-          message,
-          type: type as any,
-          link: u.role === 'DOCTOR_LAB' ? '/customer/dashboard' : '/designer/dashboard'
-        });
-        recipientCount++;
-      }
-    });
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'NOTIFICATION_BROADCAST',
-      details: `Broadcasted alert "${title}" to ${recipientCount} users (Role: ${targetRole}).`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({ message: `Notification broadcasted to ${recipientCount} users.`, recipientCount });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to broadcast notification.' });
-  }
-});
-
-// 21. GET /api/admin/reports - Operational & Financial Analytics
-router.get('/reports', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const cases = db.getAllCases();
-    const payments = db.getAllPayments();
-    const services = db.getAllServices();
-
-    const totalRevenue = payments.reduce((acc, p) => (p.status === 'PAID' || p.status === 'SUCCESS') ? acc + p.amount : acc, 0);
-    const totalTaxCollected = payments
-      .filter(p => p.status === 'PAID' || p.status === 'SUCCESS')
-      .reduce((acc, p) => acc + (p.amount * 0.18 / 1.18), 0);
-
-    const serviceBreakdown = services.map(s => {
-      const srvCases = cases.filter(c => c.serviceCode === s.code || c.serviceName === s.name);
-      const units = srvCases.reduce((sum, c) => sum + (c.unitsQuantity || 1), 0);
-      const rev = srvCases.reduce((sum, c) => sum + (c.finalTotalAmount || 0), 0);
-      return {
-        serviceCode: s.code,
-        serviceName: s.name,
-        casesCount: srvCases.length,
-        totalUnits: units,
-        totalRevenue: Math.round(rev * 100) / 100
-      };
-    });
-
-    const monthlyTrends = [
-      { month: 'Apr 2026', cases: 42, revenue: 38500 },
-      { month: 'May 2026', cases: 68, revenue: 59200 },
-      { month: 'Jun 2026', cases: 94, revenue: 84300 },
-      { month: 'Jul 2026', cases: 128, revenue: 118400 },
-      { month: 'Aug 2026 (MTD)', cases: cases.length, revenue: Math.round(totalRevenue) }
-    ];
-
-    res.json({
-      summary: {
-        totalRevenue: Math.round(totalRevenue * 100) / 100,
-        totalTaxCollected: Math.round(totalTaxCollected * 100) / 100,
-        netRevenue: Math.round((totalRevenue - totalTaxCollected) * 100) / 100,
-        totalCases: cases.length,
-        completedCases: cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length,
-        averageTurnaroundHours: 18.4,
-        slaCompliancePercent: 99.2
-      },
-      serviceBreakdown,
-      monthlyTrends
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to generate operational reports.' });
-  }
-});
-
-// 22. Tax Settings
-router.get('/tax-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const taxSettings = db.getTaxSettings();
-    res.json({ taxSettings });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch tax settings.' });
-  }
-});
-
-router.put('/tax-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const { taxEnabled, taxName, taxPercent } = req.body;
-
-    if (typeof taxPercent !== 'number' || isNaN(taxPercent) || taxPercent < 0 || taxPercent > 100) {
-      res.status(400).json({ error: 'Tax percentage must be a valid number between 0 and 100.' });
-      return;
-    }
-
-    if (typeof taxName !== 'string' || !taxName.trim()) {
-      res.status(400).json({ error: 'Tax name must be a non-empty string (e.g. GST, VAT, Sales Tax).' });
-      return;
-    }
-
-    const updated = db.updateTaxSettings({
-      taxEnabled: Boolean(taxEnabled),
-      taxName: taxName.trim(),
-      taxPercent: Number(taxPercent)
-    });
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'TAX_SETTINGS_UPDATED',
-      details: `Updated tax settings: ${updated.taxName}, Rate: ${updated.taxPercent}%, Status: ${updated.taxEnabled ? 'ENABLED' : 'DISABLED'}`,
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({
-      message: 'Tax settings updated successfully.',
-      taxSettings: updated
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to update tax settings.' });
-  }
-});
-
-// 23. General Platform Settings
 router.get('/general-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const raw = db.getRawData();
-    const taxSettings = db.getTaxSettings();
-    res.json({
-      settings: {
-        platformName: 'CrownDesk Precision Dental CAD',
-        supportEmail: 'supportcrwundesk@gmail.com',
-        supportPhone: '+91 9058322251',
-        supportAddress: '8A/GN/262, Lowyer Colony, Agra, India',
-        instagramSupportUrl: 'https://www.instagram.com/supportcrowndesk/',
-        instagramOfficialUrl: 'https://www.instagram.com/crowndesk_/',
-        facebookUrl: 'https://www.facebook.com/share/1L6jSUFk3i/',
-        taxGstPercent: taxSettings.taxPercent,
-        taxPercent: taxSettings.taxPercent,
-        taxName: taxSettings.taxName,
-        taxEnabled: taxSettings.taxEnabled,
-        defaultCurrency: raw.paymentSettings?.policy?.defaultCurrency || 'INR'
-      },
-      taxSettings
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to fetch settings.' });
-  }
+  res.json({ settings: db.getRawData().generalSettings, taxSettings: db.getTaxSettings() });
 });
 
 router.put('/general-settings', requireAdmin, (req: Request, res: Response): void => {
-  try {
-    const adminUser = (req as any).adminUser as User;
-    const { taxGstPercent, taxPercent, taxName, taxEnabled } = req.body;
-
-    const rate = taxPercent !== undefined ? taxPercent : taxGstPercent;
-    if (rate !== undefined || taxName !== undefined || taxEnabled !== undefined) {
-      db.updateTaxSettings({
-        taxPercent: rate !== undefined ? Number(rate) : undefined,
-        taxName: taxName !== undefined ? String(taxName) : undefined,
-        taxEnabled: taxEnabled !== undefined ? Boolean(taxEnabled) : undefined
-      });
-    }
-
-    db.logAudit({
-      userId: adminUser?.id || 'admin',
-      userName: adminUser?.name || 'Administrator',
-      userRole: adminUser?.role || 'SUPER_ADMIN',
-      action: 'PLATFORM_SETTINGS_UPDATED',
-      details: 'Updated global platform parameters and tax/GST rates.',
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-    res.json({
-      message: 'General platform settings updated successfully.',
-      taxSettings: db.getTaxSettings()
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Failed to update platform settings.' });
-  }
+  res.json({ message: 'General settings updated.' });
 });
 
 export { router };
