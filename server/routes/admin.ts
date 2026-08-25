@@ -225,12 +225,13 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
     const rawPassword = (password || initialPassword || 'Designer@123').trim();
     const deterministicId = `usr-emp-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const now = new Date().toISOString();
+    const hashed = hashPassword(rawPassword);
 
     const newEmp: User = {
       id: deterministicId,
       name: name.trim(),
       email: cleanEmail,
-      passwordHash: hashPassword(rawPassword),
+      passwordHash: hashed,
       role: role as any,
       phone: (phone || '').trim(),
       clinicOrLabName: 'CrownDesk Digital CAD Division',
@@ -262,6 +263,7 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
         phone: newEmp.phone,
         clinic_or_lab_name: newEmp.clinicOrLabName,
         specialization: newEmp.specialization,
+        password_hash: hashed,
         is_active: newEmp.isActive,
         created_at: newEmp.createdAt,
         updated_at: newEmp.updatedAt
@@ -307,7 +309,7 @@ router.put('/employees/:id', requireAdmin, async (req: Request, res: Response): 
             id: data.id,
             name: data.name,
             email: data.email,
-            passwordHash: hashPassword('Designer@123'),
+            passwordHash: data.password_hash || hashPassword('Designer@123'),
             role: data.role,
             phone: data.phone || '',
             clinicOrLabName: data.clinic_or_lab_name || '',
@@ -358,6 +360,7 @@ router.put('/employees/:id', requireAdmin, async (req: Request, res: Response): 
         role: emp.role,
         phone: emp.phone,
         specialization: emp.specialization,
+        password_hash: emp.passwordHash,
         is_active: emp.isActive,
         updated_at: emp.updatedAt
       });
@@ -454,21 +457,75 @@ router.patch('/employees/:id/toggle-status', requireAdmin, async (req: Request, 
   }
 });
 
-// 4b. POST /api/admin/employees/:id/reset-password
-router.post('/employees/:id/reset-password', requireAdmin, (req: Request, res: Response): void => {
+// 4b. POST /api/admin/employees/:id/reset-password - সরাসরি Supabase ক্লাউডে নতুন কাস্টম পাসওয়ার্ড সেভ
+router.post('/employees/:id/reset-password', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User;
-    const targetUser = db.findUserById(req.params.id);
+    let targetUser = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
+
+    if (!targetUser) {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`id.eq.${req.params.id},email.eq.${req.params.id}`)
+          .maybeSingle();
+
+        if (data) {
+          targetUser = {
+            id: data.id,
+            name: data.name,
+            email: data.email,
+            passwordHash: data.password_hash || hashPassword('Designer@123'),
+            role: data.role,
+            phone: data.phone || '',
+            clinicOrLabName: data.clinic_or_lab_name || '',
+            specialization: data.specialization || '',
+            isActive: data.is_active !== false,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at
+          };
+          db.addUser(targetUser);
+        }
+      } catch (e) {}
+    }
+
     if (!targetUser) {
       res.status(404).json({ error: 'User not found.' });
       return;
     }
 
-    const { newPassword = 'CrownPass123!', forceChange = true } = req.body;
-    targetUser.passwordHash = hashPassword(newPassword);
+    const { newPassword, password, forceChange = false } = req.body;
+    const rawPassword = (newPassword || password || '').trim();
+
+    if (!rawPassword) {
+      res.status(400).json({ error: 'Password cannot be empty.' });
+      return;
+    }
+
+    const newHashed = hashPassword(rawPassword);
+    targetUser.passwordHash = newHashed;
+    (targetUser as any).password = rawPassword;
     targetUser.forcePasswordChange = Boolean(forceChange);
     targetUser.updatedAt = new Date().toISOString();
     db.updateUser(targetUser.id, targetUser);
+
+    // Supabase ক্লাউড ডাটাবেসে পারমানেন্টলি সেভ
+    try {
+      await supabase.from('profiles').upsert({
+        id: targetUser.id,
+        email: targetUser.email,
+        name: targetUser.name,
+        role: targetUser.role,
+        phone: targetUser.phone || '',
+        specialization: targetUser.specialization || '',
+        password_hash: newHashed,
+        is_active: targetUser.isActive !== false,
+        updated_at: targetUser.updatedAt
+      });
+    } catch (e) {
+      console.warn('Supabase password reset cloud sync warning:', e);
+    }
 
     db.logAudit({
       userId: adminUser?.id || 'admin',
@@ -476,12 +533,12 @@ router.post('/employees/:id/reset-password', requireAdmin, (req: Request, res: R
       userRole: adminUser?.role || 'SUPER_ADMIN',
       action: 'ADMIN_RESET_PASSWORD',
       targetId: targetUser.id,
-      details: `Admin reset password for ${targetUser.name} (${targetUser.email}).`,
+      details: `Admin updated custom password for ${targetUser.name} (${targetUser.email}).`,
       ipAddress: req.ip || '127.0.0.1',
       result: 'SUCCESS'
     });
 
-    res.json({ message: `Password reset successfully for ${targetUser.name}.` });
+    res.json({ message: `Password updated successfully for ${targetUser.name}.` });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to reset password.' });
   }
