@@ -361,7 +361,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     });
   };
 
-  // Customer CRUD Handlers (১০% সুরক্ষিত ও নোটিফিকেশন সহ)
+  // Customer CRUD Handlers
   const handleSaveCustomer = async (custData: any) => {
     try {
       if (customerModal.editingCustomer) {
@@ -480,6 +480,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     }
   };
 
+  // Broadcast Notification
+  const handleBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.broadcastNotification(broadcastData);
+      setBroadcastModal(false);
+      setBroadcastData({ title: '', message: '', targetRole: 'ALL', type: 'INFO' });
+      fetchAllData();
+      alert('Notification broadcast successfully dispatched.');
+    } catch (err: any) {
+      alert(err.message || 'Broadcast failed');
+    }
+  };
+
   // Navigation Items
   const navItems: { id: AdminTab; label: string; icon: React.FC<any>; count?: number }[] = [
     { id: 'DASHBOARD', label: 'Dashboard', icon: LayoutDashboard },
@@ -516,6 +530,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     cust.email?.toLowerCase().includes(customerSearch.toLowerCase()) ||
     cust.clinicOrLabName?.toLowerCase().includes(customerSearch.toLowerCase()) ||
     cust.phone?.toLowerCase().includes(customerSearch.toLowerCase())
+  );
+
+  // Filtered audit logs
+  const filteredAuditLogs = auditLogs.filter(a =>
+    a.action?.toLowerCase().includes(auditSearch.toLowerCase()) ||
+    a.userName?.toLowerCase().includes(auditSearch.toLowerCase()) ||
+    a.details?.toLowerCase().includes(auditSearch.toLowerCase()) ||
+    a.targetEntity?.toLowerCase().includes(auditSearch.toLowerCase())
   );
 
   return (
@@ -982,6 +1004,364 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* 6. PRICING & SERVICES TAB */}
+      {/* ========================================================================= */}
+      {(activeTab === 'PRICING_SERVICES' || activeTab === 'SERVICES' || activeTab === 'PRICING' || activeTab === 'OFFERS') && (
+        <AdminPricingManagement
+          initialSubTab={
+            activeTab === 'OFFERS'
+              ? 'OFFERS'
+              : activeTab === 'PRICING'
+              ? 'TAX_SETTINGS'
+              : 'ALL_SERVICES'
+          }
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* 7. PAYMENTS TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'PAYMENTS' && (
+        <div className="space-y-6">
+          <PaymentTransactionsLedger />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8. INVOICES TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'INVOICES' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="pb-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-slate-100">Itemized GST Tax Invoices Ledger</h2>
+            <p className="text-xs text-slate-400">Audit-ready billing statements with GST breakups, discounts, and payment receipts</p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
+                  <th className="py-3 px-2">Invoice No</th>
+                  <th className="py-3 px-2">Case ID</th>
+                  <th className="py-3 px-2">Customer</th>
+                  <th className="py-3 px-2">Subtotal</th>
+                  <th className="py-3 px-2">GST (18%)</th>
+                  <th className="py-3 px-2">Total Amount</th>
+                  <th className="py-3 px-2">Status</th>
+                  <th className="py-3 px-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {invoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-slate-800/40 transition">
+                    <td className="py-3 px-2 font-mono font-bold text-cyan-400">{inv.invoiceNumber}</td>
+                    <td className="py-3 px-2 font-mono text-purple-300">{inv.caseId}</td>
+                    <td className="py-3 px-2 text-slate-200 font-medium">{inv.customerName}</td>
+                    <td className="py-3 px-2 font-mono text-slate-300">₹{inv.subtotal?.toLocaleString()}</td>
+                    <td className="py-3 px-2 font-mono text-slate-400">₹{inv.taxAmount?.toLocaleString()}</td>
+                    <td className="py-3 px-2 font-mono font-bold text-emerald-400">₹{inv.finalTotalAmount?.toLocaleString()}</td>
+                    <td className="py-3 px-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        inv.status === 'PAID' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                      }`}>
+                        {inv.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-2 text-right">
+                      <button
+                        onClick={() => setSelectedInvoice(inv)}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-semibold text-[11px] flex items-center gap-1 ml-auto"
+                      >
+                        <Eye className="w-3 h-3 text-cyan-400" />
+                        <span>View Statement</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 9. FILES TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'FILES' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="pb-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-slate-100">Private CAD STL & Scan Files Repository</h2>
+            <p className="text-xs text-slate-400">Gated download security, file checksums, and cloud storage pointers</p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
+                  <th className="py-3 px-2">File Name</th>
+                  <th className="py-3 px-2">Case ID</th>
+                  <th className="py-3 px-2">File Type</th>
+                  <th className="py-3 px-2">Size</th>
+                  <th className="py-3 px-2">Downloads</th>
+                  <th className="py-3 px-2">Gated Access</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filesCatalog.map(f => (
+                  <tr key={f.id} className="hover:bg-slate-800/40 transition">
+                    <td className="py-3 px-2 font-mono font-medium text-slate-200">{f.originalName || f.fileName}</td>
+                    <td className="py-3 px-2 font-mono text-purple-300">{f.caseId}</td>
+                    <td className="py-3 px-2">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono text-[10px]">
+                        {f.fileType}
+                      </span>
+                    </td>
+                    <td className="py-3 px-2 font-mono text-slate-400">{Math.round((f.sizeBytes || 0) / 1024 / 1024 * 10) / 10} MB</td>
+                    <td className="py-3 px-2 font-mono text-slate-300">{f.downloadCount || 0}</td>
+                    <td className="py-3 px-2">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                        SECURED
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 10. NOTIFICATIONS TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'NOTIFICATIONS' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+            <div>
+              <h2 className="text-lg font-bold text-slate-100">Dispatched Alerts & Customer Communications</h2>
+              <p className="text-xs text-slate-400">SMS, Email, and in-app triggers dispatched on case status changes</p>
+            </div>
+            <button
+              onClick={() => setBroadcastModal(true)}
+              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+            >
+              <Send className="w-4 h-4" />
+              <span>Broadcast New Message</span>
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {notifications.map(n => (
+              <div key={n.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex items-start gap-3 text-xs">
+                <Bell className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-200">{n.title}</span>
+                    <span className="text-[10px] text-slate-500">{new Date(n.createdAt).toLocaleString()}</span>
+                  </div>
+                  <p className="text-slate-400">{n.message}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 11. REPORTS TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'REPORTS' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-1">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Average Turnaround SLA</div>
+              <div className="text-2xl font-black text-cyan-400 font-mono">18.4 Hours</div>
+              <div className="text-[10px] text-slate-500">99.2% Standard Delivery Compliance</div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-1">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">First-Pass Clinical Approval</div>
+              <div className="text-2xl font-black text-emerald-400 font-mono">98.7%</div>
+              <div className="text-[10px] text-slate-500">&lt;1.3% Clinical Revision Requests</div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-1">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Active Doctor Accounts</div>
+              <div className="text-2xl font-black text-purple-400 font-mono">{customers.length}</div>
+              <div className="text-[10px] text-slate-500">Pan-India Clinical Coverage</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 12. SEO TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'SEO' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5 text-xs text-slate-100">
+          <div className="pb-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-slate-100">Search Engine Optimization (SEO) & OpenGraph</h2>
+            <p className="text-xs text-slate-400">Search ranking meta titles, robot tags, and official contact metadata</p>
+          </div>
+
+          {seoSaveMsg && (
+            <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{seoSaveMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveSeo} className="space-y-4 max-w-2xl">
+            <div>
+              <label className="block font-semibold text-slate-300 mb-1">Global Site Meta Title</label>
+              <input
+                type="text"
+                value={seoForm.siteTitle}
+                onChange={e => setSeoForm({ ...seoForm, siteTitle: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-300 mb-1">Meta Description</label>
+              <textarea
+                rows={3}
+                value={seoForm.metaDescription}
+                onChange={e => setSeoForm({ ...seoForm, metaDescription: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-300 mb-1">Target SEO Keywords (Comma-separated)</label>
+              <input
+                type="text"
+                value={seoForm.keywords}
+                onChange={e => setSeoForm({ ...seoForm, keywords: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
+            >
+              Save SEO Configuration
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 13. STORAGE TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'STORAGE' && (
+        <div className="space-y-6">
+          <PaymentStorageSettings />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 14. SETTINGS TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'SETTINGS' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 text-xs text-slate-100">
+          <div className="pb-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-slate-100">Global Platform Parameters & Official Identity</h2>
+            <p className="text-xs text-slate-400">Headquarters address, support hotline, and billing tax rates</p>
+          </div>
+
+          {settingsSaveMsg && (
+            <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{settingsSaveMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveSettings} className="space-y-4 max-w-3xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Official Support Email</label>
+                <input
+                  type="email"
+                  value={settingsForm.supportEmail}
+                  onChange={e => setSettingsForm({ ...settingsForm, supportEmail: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">Official Support Phone</label>
+                <input
+                  type="text"
+                  value={settingsForm.supportPhone}
+                  onChange={e => setSettingsForm({ ...settingsForm, supportPhone: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
+            >
+              Update Platform Settings
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 15. AUDIT LOGS TAB */}
+      {/* ========================================================================= */}
+      {activeTab === 'AUDIT_LOGS' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <h2 className="text-lg font-bold text-slate-100">System Security & Immutable Audit Trail</h2>
+              <p className="text-xs text-slate-400">Timestamped record of administrative actions, password resets, and assignments</p>
+            </div>
+            <input
+              type="text"
+              value={auditSearch}
+              onChange={e => setAuditSearch(e.target.value)}
+              placeholder="Search audit trail..."
+              className="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
+                  <th className="py-2.5 px-2">Timestamp</th>
+                  <th className="py-2.5 px-2">Actor / User</th>
+                  <th className="py-2.5 px-2">Action</th>
+                  <th className="py-2.5 px-2">Details</th>
+                  <th className="py-2.5 px-2">Result</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                {filteredAuditLogs.map(a => (
+                  <tr key={a.id} className="hover:bg-slate-800/40">
+                    <td className="py-2.5 px-2 text-slate-400">{new Date(a.timestamp).toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-purple-300 font-semibold">{a.userName}</td>
+                    <td className="py-2.5 px-2 text-cyan-300 font-bold">{a.action}</td>
+                    <td className="py-2.5 px-2 text-slate-300 font-sans">{a.details}</td>
+                    <td className="py-2.5 px-2">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold text-emerald-400 bg-emerald-950/60">
+                        {a.result || 'OK'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Modals */}
       {assignModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
@@ -1008,6 +1388,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Broadcast Modal */}
+      {broadcastModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-100 shadow-2xl space-y-3 text-xs">
+            <h3 className="text-base font-bold mb-2">Broadcast System Announcement</h3>
+            <form onSubmit={handleBroadcast} className="space-y-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Target Audience</label>
+                <select
+                  value={broadcastData.targetRole}
+                  onChange={e => setBroadcastData({ ...broadcastData, targetRole: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
+                >
+                  <option value="ALL">All Platform Users</option>
+                  <option value="DOCTOR_LAB">Doctors & Dental Labs Only</option>
+                  <option value="DESIGNER_EMPLOYEE">CAD Designers Only</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Announcement Title</label>
+                <input
+                  type="text"
+                  required
+                  value={broadcastData.title}
+                  onChange={e => setBroadcastData({ ...broadcastData, title: e.target.value })}
+                  placeholder="System Maintenance or Update"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Message Content</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={broadcastData.message}
+                  onChange={e => setBroadcastData({ ...broadcastData, message: e.target.value })}
+                  placeholder="Enter details..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-slate-100"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-3">
+                <button type="button" onClick={() => setBroadcastModal(false)} className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-xl">
+                  Cancel
+                </button>
+                <button type="submit" className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow">
+                  Dispatch Announcement
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Modal */}
+      {selectedInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 text-slate-100 shadow-2xl space-y-4 text-xs">
+            <div className="flex justify-between items-start border-b border-slate-800 pb-3">
+              <div>
+                <div className="font-mono text-purple-400 font-bold">{selectedInvoice.invoiceNumber}</div>
+                <div className="text-sm font-bold text-slate-100">CrownDesk Tax Invoice</div>
+              </div>
+              <button onClick={() => setSelectedInvoice(null)} className="text-slate-400 hover:text-slate-200">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-2 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div className="flex justify-between"><span className="text-slate-400">Customer:</span><span className="font-bold text-slate-200">{selectedInvoice.customerName}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Case ID:</span><span className="font-mono text-purple-300">{selectedInvoice.caseId}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Total Billed:</span><span className="font-mono text-emerald-400">₹{selectedInvoice.finalTotalAmount?.toLocaleString()}</span></div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => window.print()} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow">
+                <Download className="w-4 h-4" />
+                <span>Print Invoice</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
