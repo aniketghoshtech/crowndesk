@@ -119,6 +119,16 @@ export const api = {
     return handleResponse<{ user: User }>(res, 'Session expired');
   },
 
+  // Designer / Staff Toggle Duty Status (Online / Offline)
+  async toggleDutyStatus(isActive?: boolean): Promise<{ message: string; isActive: boolean; user: any }> {
+    const res = await fetch(`${API_BASE}/auth/toggle-duty`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ isActive })
+    });
+    return handleResponse<{ message: string; isActive: boolean; user: any }>(res, 'Failed to update duty status');
+  },
+
   // Cases
   async getCases(params?: { status?: string; priority?: string; search?: string }): Promise<{ cases: CaseRecord[] }> {
     const q = new URLSearchParams(params as any).toString();
@@ -476,7 +486,6 @@ export const api = {
     return handleResponse<AdminAnalytics>(res, 'Failed to fetch analytics');
   },
 
-  // Fixed: Returns both users and employees arrays for 100% dashboard compatibility
   async getAdminUsers(): Promise<{ users: User[]; employees: User[] }> {
     const res = await fetch(`${API_BASE}/admin/employees`, {
       headers: getAuthHeaders()
