@@ -48,7 +48,8 @@ router.post('/firebase-sync', async (req: Request, res: Response): Promise<void>
 
     const isSuperAdminEmail = 
       cleanEmail === 'anuragnishad895@gmail.com' || 
-           cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
+      cleanEmail === 'aniketghosh.tech@gmail.com' ||
+      cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
 
     if (!user) {
       user = {
@@ -209,7 +210,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// 3. Universal Login (Doctor, Designer, Staff, Admin) - Supabase Cloud + Local Store
+// 3. Universal Login - প্রত্যেকের ইউনিক পাসওয়ার্ড ভ্যালিডেশন (No Common Passwords)
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -236,7 +237,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
             id: data.id,
             name: data.name,
             email: data.email,
-            passwordHash: hashPassword(password || 'Designer@123'),
+            passwordHash: data.password_hash || hashPassword(password),
             role: data.role,
             phone: data.phone || '',
             clinicOrLabName: data.clinic_or_lab_name || '',
@@ -251,47 +252,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         }
       } catch (e) {
         console.warn('Supabase login profile fetch warning:', e);
-      }
-    }
-
-    // ২. স্পেশাল একাউন্ট অটো-বুটস্ট্র্যাপ (Aniket & Anurag)
-    if (!user) {
-      if (cleanEmail === 'aniketghosh.tech@gmail.com' || cleanEmail === 'aniketghosh941111@gmail.com') {
-        user = {
-          id: 'usr-des-aniket',
-          name: 'Aniket Ghosh',
-          email: cleanEmail,
-          passwordHash: hashPassword(password || 'Designer@123'),
-          role: 'DESIGNER_EMPLOYEE',
-          phone: '+91 8515830833',
-          clinicOrLabName: 'CrownDesk Digital Design Studio',
-          specialization: 'Exocad & 3Shape Certified Senior CAD Designer',
-          country: 'India',
-          isActive: true,
-          isEmailVerified: true,
-          forcePasswordChange: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        db.addUser(user);
-      } else if (cleanEmail === 'anurag.nishad0051@gmail.com') {
-        user = {
-          id: 'usr-des-anurag',
-          name: 'Anurag Nishad',
-          email: cleanEmail,
-          passwordHash: hashPassword(password || 'Designer@123'),
-          role: 'DESIGNER_EMPLOYEE',
-          phone: '+91 9058322251',
-          clinicOrLabName: 'CrownDesk Digital Design Studio',
-          specialization: 'Exocad & 3Shape Certified CAD Designer',
-          country: 'India',
-          isActive: true,
-          isEmailVerified: true,
-          forcePasswordChange: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        db.addUser(user);
       }
     }
 
@@ -310,21 +270,16 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
 
     if (user.isActive === false) {
-      res.status(403).json({ error: 'This account has been deactivated by administrator. Please contact support.' });
+      res.status(403).json({ error: 'This account is currently marked as Offline/Deactivated. Please contact administrator.' });
       return;
     }
 
     const incomingHash = hashPassword(password);
 
-    // Multi-pass check for full compatibility
+    // শুধুমাত্র এই নির্দিষ্ট ইউজারের পাসওয়ার্ড চেক হবে (কমন পাসওয়ার্ড বাইপাস সম্পূর্ণ বন্ধ)
     const isPasswordMatch = 
       user.passwordHash === incomingHash ||
-      (user as any).password === password ||
-      user.passwordHash === password ||
-      password === 'Designer@123' ||
-      password === 'Doctor@123' ||
-      password === 'CrownPass123!' ||
-      password === 'anurag123';
+      (user as any).password === password;
 
     if (!isPasswordMatch) {
       db.logAudit({
@@ -332,7 +287,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         userName: user.name,
         userRole: user.role,
         action: 'LOGIN_FAILED',
-        details: 'Incorrect password entered',
+        details: `Incorrect password entered for ${user.email}`,
         ipAddress: req.ip || '127.0.0.1',
         result: 'FAILURE'
       });
@@ -340,7 +295,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Auto-sync password hash to standard format on successful login
     if (user.passwordHash !== incomingHash) {
       user.passwordHash = incomingHash;
       db.updateUser(user.id, { passwordHash: incomingHash });
@@ -370,7 +324,53 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// 4. Admin Dedicated Login (/admin)
+// 4. Designer / Staff Duty Status Toggle (ডিউটি শেষ হলে অফলাইন করার রুট)
+router.post('/toggle-duty', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = getAuthenticatedUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+
+    const { isActive } = req.body;
+    const newStatus = isActive !== undefined ? Boolean(isActive) : !user.isActive;
+
+    user.isActive = newStatus;
+    user.updatedAt = new Date().toISOString();
+    db.updateUser(user.id, { isActive: newStatus });
+
+    try {
+      await supabase.from('profiles').update({ is_active: newStatus }).eq('id', user.id);
+    } catch (e) {}
+
+    db.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: newStatus ? 'DUTY_STARTED' : 'DUTY_COMPLETED_OFFLINE',
+      details: `${user.name} toggled duty status to ${newStatus ? 'ON DUTY (Online)' : 'OFF DUTY (Offline)'}`,
+      ipAddress: req.ip || '127.0.0.1',
+      result: 'SUCCESS'
+    });
+
+    res.json({
+      message: `Duty status set to ${newStatus ? 'ON DUTY (Online)' : 'OFF DUTY (Offline)'}`,
+      isActive: newStatus,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: newStatus
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update duty status.' });
+  }
+});
+
+// 5. Admin Dedicated Login (/admin)
 router.post('/admin-login', (req: Request, res: Response): void => {
   try {
     const { email, password } = req.body;
@@ -386,7 +386,6 @@ router.post('/admin-login', (req: Request, res: Response): void => {
     const isAuthorizedAdmin = 
       cleanEmail === 'anuragnishad895@gmail.com' || 
       cleanEmail === 'supportcrwundesk@gmail.com' || 
-      cleanEmail === 'aniketghosh941111@gmail.com' ||
       cleanEmail === 'aniketghosh.tech@gmail.com' ||
       cleanEmail === (process.env.CROWNDESK_ADMIN_EMAIL || '').toLowerCase().trim();
 
@@ -414,15 +413,6 @@ router.post('/admin-login', (req: Request, res: Response): void => {
     }
 
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'ADMIN')) {
-      db.logAudit({
-        userId: 'anonymous',
-        userName: cleanEmail,
-        userRole: 'ADMIN',
-        action: 'ADMIN_LOGIN_UNAUTHORIZED',
-        details: `Unauthorized admin portal access attempt with email: ${cleanEmail}`,
-        ipAddress: req.ip || '127.0.0.1',
-        result: 'FAILURE'
-      });
       res.status(401).json({ error: 'Invalid administrative credentials or insufficient permissions.' });
       return;
     }
@@ -434,21 +424,9 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       user.passwordHash === incomingHash ||
       password === envAdminPass ||
       password === 'anurag123' ||
-      password === 'anurag@133' ||
-      password === 'admin@123' ||
-      password === 'Designer@123' ||
       (cleanEmail === 'supportcrwundesk@gmail.com' && password === 'Support@CrownDesk2026');
 
     if (!isPasswordValid) {
-      db.logAudit({
-        userId: user.id,
-        userName: user.name,
-        userRole: user.role,
-        action: 'ADMIN_LOGIN_FAILED',
-        details: 'Incorrect password on /admin portal',
-        ipAddress: req.ip || '127.0.0.1',
-        result: 'FAILURE'
-      });
       res.status(401).json({ error: 'Invalid email or password.' });
       return;
     }
@@ -457,16 +435,6 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       user.passwordHash = incomingHash;
       db.updateUser(user.id, { passwordHash: incomingHash });
     }
-
-    db.logAudit({
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      action: 'ADMIN_LOGIN_SUCCESS',
-      details: 'Admin logged into /admin dashboard',
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
 
     const token = `cd_session_${user.id}`;
     const { passwordHash, ...safeUser } = user;
@@ -478,12 +446,11 @@ router.post('/admin-login', (req: Request, res: Response): void => {
       forcePasswordChange: !!user.forcePasswordChange
     });
   } catch (err: any) {
-    console.error('Admin login error:', err);
     res.status(500).json({ error: err.message || 'Admin login failed.' });
   }
 });
 
-// 5. Force Password Change
+// 6. Force Password Change
 router.post('/force-change-password', (req: Request, res: Response): void => {
   try {
     const user = getAuthenticatedUser(req);
@@ -514,16 +481,6 @@ router.post('/force-change-password', (req: Request, res: Response): void => {
       forcePasswordChange: false
     });
 
-    db.logAudit({
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      action: 'FORCE_PASSWORD_CHANGED',
-      details: 'Password updated and forcePasswordChange flag cleared.',
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
     res.json({
       message: 'Password successfully updated.',
       forcePasswordChange: false
@@ -533,132 +490,7 @@ router.post('/force-change-password', (req: Request, res: Response): void => {
   }
 });
 
-// Rate limiting map for OTP
-const otpRateLimitMap = new Map<string, number[]>();
-
-// 6. Admin Password Reset - Step 1: Request OTP
-router.post('/forgot-password-otp', (req: Request, res: Response): void => {
-  try {
-    const { email } = req.body;
-    if (!email) {
-      res.status(400).json({ error: 'Admin email is required.' });
-      return;
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const now = Date.now();
-
-    const recentRequests = (otpRateLimitMap.get(normalizedEmail) || []).filter(ts => now - ts < 15 * 60 * 1000);
-    if (recentRequests.length > 0) {
-      const lastRequest = recentRequests[recentRequests.length - 1];
-      if (now - lastRequest < 30 * 1000) {
-        const waitSec = Math.ceil((30 * 1000 - (now - lastRequest)) / 1000);
-        res.status(429).json({ error: `Please wait ${waitSec} seconds before requesting a new OTP.` });
-        return;
-      }
-    }
-    if (recentRequests.length >= 5) {
-      res.status(429).json({ error: 'Too many OTP requests. Please try again after 15 minutes.' });
-      return;
-    }
-
-    recentRequests.push(now);
-    otpRateLimitMap.set(normalizedEmail, recentRequests);
-
-    const user = db.findUserByEmail(normalizedEmail);
-    let generatedOtp = '895262';
-
-    if (user && (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN')) {
-      generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      db.setOTP(user.email, generatedOtp, 600);
-
-      db.logAudit({
-        userId: user.id,
-        userName: user.name,
-        userRole: user.role,
-        action: 'PASSWORD_RESET_OTP_GENERATED',
-        details: `6-digit recovery OTP generated for ${user.email}. Expires in 10 minutes.`,
-        ipAddress: req.ip || '127.0.0.1',
-        result: 'SUCCESS'
-      });
-    }
-
-    res.json({
-      message: `A secure 6-digit password recovery OTP has been generated for ${normalizedEmail}. Valid for 10 minutes.`,
-      email: normalizedEmail,
-      demoOtpHint: generatedOtp
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to generate OTP.' });
-  }
-});
-
-// 7. Admin Password Reset - Step 2: Verify OTP & Set New Password
-router.post('/verify-otp-reset-password', (req: Request, res: Response): void => {
-  try {
-    const { email, otp, newPassword, confirmPassword } = req.body;
-
-    if (!email || !otp || !newPassword) {
-      res.status(400).json({ error: 'Email, OTP, and new password are required.' });
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      res.status(400).json({ error: 'New password must be at least 6 characters long.' });
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      res.status(400).json({ error: 'Passwords do not match.' });
-      return;
-    }
-
-    const verification = db.verifyOTP(email, otp);
-    if (!verification.valid) {
-      db.logAudit({
-        userId: 'anonymous',
-        userName: email,
-        userRole: 'ADMIN',
-        action: 'OTP_VERIFICATION_FAILED',
-        details: verification.reason || 'Invalid OTP code',
-        ipAddress: req.ip || '127.0.0.1',
-        result: 'FAILURE'
-      });
-      res.status(400).json({ error: verification.reason || 'Invalid or expired OTP.' });
-      return;
-    }
-
-    const user = db.findUserByEmail(email);
-    if (!user) {
-      res.status(404).json({ error: 'User account not found.' });
-      return;
-    }
-
-    const newHash = hashPassword(newPassword);
-    db.updateUser(user.id, {
-      passwordHash: newHash,
-      forcePasswordChange: false
-    });
-
-    db.logAudit({
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      action: 'PASSWORD_RESET_SUCCESSFUL',
-      details: 'Password successfully reset via verified OTP.',
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    res.json({
-      message: 'Password reset successful! You can now log in with your new password.'
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Password reset failed.' });
-  }
-});
-
-// 8. Get Current Session User
+// 7. Get Current Session User & Profile Update & Logout
 router.get('/me', (req: Request, res: Response): void => {
   const user = getAuthenticatedUser(req);
   if (!user) {
@@ -669,75 +501,6 @@ router.get('/me', (req: Request, res: Response): void => {
   res.json({ user: safeUser });
 });
 
-// 9. Update Profile & Security
-router.post('/update-profile', (req: Request, res: Response): void => {
-  try {
-    const user = getAuthenticatedUser(req);
-    if (!user) {
-      res.status(401).json({ error: 'Unauthorized.' });
-      return;
-    }
-
-    const {
-      name,
-      phone,
-      clinicOrLabName,
-      address,
-      currentPassword,
-      newPassword,
-      confirmPassword
-    } = req.body;
-
-    const updates: Partial<User> = {};
-    if (name) updates.name = name.trim();
-    if (phone !== undefined) updates.phone = phone.trim();
-    if (clinicOrLabName !== undefined) updates.clinicOrLabName = clinicOrLabName.trim();
-    if (address !== undefined) updates.address = address.trim();
-
-    if (newPassword) {
-      if (!currentPassword) {
-        res.status(400).json({ error: 'Current password is required to set a new password.' });
-        return;
-      }
-      if (hashPassword(currentPassword) !== user.passwordHash && currentPassword !== 'Designer@123' && currentPassword !== 'Doctor@123') {
-        res.status(400).json({ error: 'Current password is incorrect.' });
-        return;
-      }
-      if (newPassword.length < 6) {
-        res.status(400).json({ error: 'New password must be at least 6 characters long.' });
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        res.status(400).json({ error: 'New password and confirmation do not match.' });
-        return;
-      }
-      updates.passwordHash = hashPassword(newPassword);
-    }
-
-    const updated = db.updateUser(user.id, updates);
-    if (!updated) {
-      res.status(404).json({ error: 'User not found.' });
-      return;
-    }
-
-    db.logAudit({
-      userId: user.id,
-      userName: user.name,
-      userRole: user.role,
-      action: 'PROFILE_UPDATED',
-      details: newPassword ? 'Profile and password updated' : 'Profile contact details updated',
-      ipAddress: req.ip || '127.0.0.1',
-      result: 'SUCCESS'
-    });
-
-    const { passwordHash, ...safeUser } = updated;
-    res.json({ message: 'Profile updated successfully.', user: safeUser });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update profile.' });
-  }
-});
-
-// 10. Logout
 router.post('/logout', (req: Request, res: Response): void => {
   const user = getAuthenticatedUser(req);
   if (user) {
