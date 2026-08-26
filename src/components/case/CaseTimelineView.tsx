@@ -1,19 +1,116 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TimelineEvent, CaseStatus } from '../../types';
-import { CheckCircle2, Clock, User, ArrowRight, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { api } from '../../services/api';
+import {
+  CheckCircle2,
+  Clock,
+  User,
+  ArrowRight,
+  AlertTriangle,
+  ShieldCheck,
+  MessageSquare,
+  Send,
+  RotateCcw,
+  Sparkles,
+  Check,
+  AlertCircle
+} from 'lucide-react';
 
 interface CaseTimelineViewProps {
   timeline?: TimelineEvent[];
   history?: TimelineEvent[];
   currentStatus: CaseStatus;
+  caseId?: string;
+  onStatusUpdated?: () => void;
+  onAddComment?: (comment: string, actionType?: 'REVISION' | 'COMMENT' | 'APPROVE') => Promise<void> | void;
+  allowDoctorCorrection?: boolean;
 }
 
 export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
   timeline,
   history,
-  currentStatus
+  currentStatus,
+  caseId,
+  onStatusUpdated,
+  onAddComment,
+  allowDoctorCorrection = true
 }) => {
   const events = timeline || history || [];
+
+  // Doctor correction & comment form state
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const quickCorrectionTags = [
+    'Reduce occlusal height (0.2mm - 0.3mm)',
+    'Loosen mesial / distal proximal contact',
+    'Tighten interproximal contact point',
+    'Refine gingival margin line fit',
+    'Anatomy cusp too sharp, soften ridges',
+    'Increase minimal wall thickness (0.8mm+)'
+  ];
+
+  const handleAddTag = (tag: string) => {
+    setCommentText(prev => prev ? `${prev}. ${tag}` : tag);
+  };
+
+  const handleAction = async (actionType: 'REVISION' | 'COMMENT' | 'APPROVE') => {
+    if (actionType !== 'APPROVE' && !commentText.trim()) {
+      setErrorMsg('Please enter your correction instructions or comment.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setErrorMsg('');
+      setSuccessMsg('');
+
+      if (onAddComment) {
+        await onAddComment(commentText.trim(), actionType);
+        setSuccessMsg(
+          actionType === 'REVISION'
+            ? 'Correction request submitted! Case moved to REVISION.'
+            : actionType === 'APPROVE'
+            ? '3D Design approved successfully!'
+            : 'Comment added to case timeline.'
+        );
+      } else if (caseId) {
+        if (actionType === 'REVISION') {
+          await api.updateCaseStatus(
+            caseId,
+            'REVISION' as CaseStatus,
+            `[Doctor Correction Request]: ${commentText.trim()}`
+          );
+          setSuccessMsg('Correction request sent to CAD Designer! Status changed to REVISION.');
+        } else if (actionType === 'APPROVE') {
+          await api.updateCaseStatus(
+            caseId,
+            'COMPLETED' as CaseStatus,
+            commentText.trim() ? `[Doctor Approved]: ${commentText.trim()}` : 'Doctor approved final 3D design.'
+          );
+          setSuccessMsg('3D CAD design approved successfully!');
+        } else {
+          await api.addCaseComment(caseId, commentText.trim());
+          setSuccessMsg('Clinical note added to timeline.');
+        }
+      } else {
+        setSuccessMsg('Feedback noted.');
+      }
+
+      setCommentText('');
+      if (onStatusUpdated) onStatusUpdated();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to submit feedback.');
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => {
+        setSuccessMsg('');
+        setErrorMsg('');
+      }, 4000);
+    }
+  };
 
   const allStages: { key: CaseStatus; label: string; desc: string }[] = [
     { key: 'NEW', label: 'NEW', desc: 'Case Created' },
@@ -29,7 +126,6 @@ export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
 
   const getStageStatus = (stageKey: CaseStatus) => {
     if (currentStatus === stageKey) return 'CURRENT';
-    // If case is in REVISION and stage is REVISION, it's current.
     const orderMap: Record<CaseStatus, number> = {
       NEW: 0,
       RECEIVED: 1,
@@ -94,6 +190,7 @@ export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 text-slate-100 shadow-xl space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
@@ -107,7 +204,7 @@ export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400 font-medium">Current Status:</span>
           <span className={`text-xs font-bold px-3 py-1 rounded-full border uppercase ${getStatusBadgeColor(currentStatus)}`}>
-            {currentStatus.replace('_', ' ')}
+            {currentStatus ? currentStatus.replace('_', ' ') : 'NEW'}
           </span>
         </div>
       </div>
@@ -155,6 +252,103 @@ export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
           );
         })}
       </div>
+
+      {/* ========================================================================= */}
+      {/* DOCTOR CLINICAL REVIEW & CORRECTION BOX */}
+      {/* ========================================================================= */}
+      {allowDoctorCorrection && (
+        <div className="bg-slate-950/90 border border-slate-800/90 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-md">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-800/80">
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="w-4 h-4 text-amber-400" />
+              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                Doctor Review & Clinical Correction Notes
+              </h4>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">
+              Actionable CAD Feedback
+            </span>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wide">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              Quick Presets (Click to add):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {quickCorrectionTags.map((tag, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleAddTag(tag)}
+                  className="text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 rounded-lg px-2.5 py-1 transition"
+                >
+                  + {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Text Area */}
+          <textarea
+            rows={3}
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            placeholder="Describe clinical modifications for the CAD Designer (e.g. Please reduce occlusal height by 0.3mm and loosen mesial contact contour)..."
+            className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 leading-relaxed"
+          />
+
+          {/* Notification Banners */}
+          {successMsg && (
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+          {errorMsg && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => handleAction('COMMENT')}
+              disabled={submitting || !commentText.trim()}
+              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-300 border border-slate-800 text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Post Comment Only</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAction('REVISION')}
+              disabled={submitting || !commentText.trim()}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg shadow-amber-600/20 transition flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Request Correction (Send to REVISION)</span>
+            </button>
+
+            {(currentStatus === 'APPROVAL' || currentStatus === 'QC') && (
+              <button
+                type="button"
+                onClick={() => handleAction('APPROVE')}
+                disabled={submitting}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Approve 3D Design</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Detailed Chronological History Records with 5-Tuple Logs */}
       <div className="space-y-3.5 relative before:absolute before:inset-0 before:left-3.5 before:w-0.5 before:bg-slate-800">
@@ -218,7 +412,7 @@ export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-900 text-[11px] text-slate-400">
                     <div className="flex items-center gap-1.5">
                       <User className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Transitioned by: <span className="font-semibold text-slate-200">{event.userName}</span></span>
+                      <span>Transitioned by: <span className="font-semibold text-slate-200">{event.userName || 'System'}</span></span>
                     </div>
                     {event.userRole && (
                       <span className={`text-[10px] px-2 py-0.5 rounded-md border font-bold uppercase tracking-wider ${getRoleBadgeColor(event.userRole)}`}>
@@ -236,3 +430,4 @@ export const CaseTimelineView: React.FC<CaseTimelineViewProps> = ({
   );
 };
 
+export default CaseTimelineView;

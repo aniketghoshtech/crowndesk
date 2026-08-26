@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -69,7 +69,8 @@ import {
   FolderPlus,
   ToggleLeft,
   ToggleRight,
-  Boxes
+  Boxes,
+  RotateCcw
 } from 'lucide-react';
 import { AdminCaseModal } from './AdminCaseModal';
 import { AdminCustomerModal } from './AdminCustomerModal';
@@ -145,6 +146,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
   const [customerSearch, setCustomerSearch] = useState('');
   const [auditSearch, setAuditSearch] = useState('');
   const [designerStatusFilter, setDesignerStatusFilter] = useState<'ALL' | 'ACTIVE' | 'OFFLINE'>('ALL');
+
+  // Doctor & Date Range Filter States
+  const [selectedDoctorFilter, setSelectedDoctorFilter] = useState('ALL');
+  const [dateFilterMode, setDateFilterMode] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM'>('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Modals & Action States
   const [assignModal, setAssignModal] = useState<{ open: boolean; caseId: string }>({ open: false, caseId: '' });
@@ -301,6 +308,109 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     if (designerStatusFilter === 'OFFLINE') return d.isActive === false;
     return true;
   });
+
+  // Filtered cases with Doctor & Date Range filtering
+  const filteredCases = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    return cases.filter(c => {
+      // 1. Status Filter
+      const matchesStatus = caseStatusFilter === 'ALL' || c.status === caseStatusFilter;
+
+      // 2. Search Text
+      const matchesSearch =
+        !caseSearch ||
+        c.id.toLowerCase().includes(caseSearch.toLowerCase()) ||
+        c.patientName.toLowerCase().includes(caseSearch.toLowerCase()) ||
+        c.doctorName.toLowerCase().includes(caseSearch.toLowerCase()) ||
+        (c.assignedDesignerName && c.assignedDesignerName.toLowerCase().includes(caseSearch.toLowerCase()));
+
+      // 3. Doctor Filter
+      const matchesDoctor =
+        selectedDoctorFilter === 'ALL' ||
+        c.doctorId === selectedDoctorFilter ||
+        c.doctorName?.toLowerCase() === selectedDoctorFilter.toLowerCase();
+
+      // 4. Date / Month Filter
+      let matchesDate = true;
+      if (c.createdAt) {
+        const caseDate = new Date(c.createdAt);
+
+        if (dateFilterMode === 'THIS_MONTH') {
+          matchesDate = caseDate.getFullYear() === currentYear && caseDate.getMonth() === currentMonth;
+        } else if (dateFilterMode === 'LAST_MONTH') {
+          const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+          const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+          matchesDate = caseDate.getFullYear() === prevYear && caseDate.getMonth() === prevMonth;
+        } else if (dateFilterMode === 'CUSTOM') {
+          if (startDate && new Date(startDate) > caseDate) matchesDate = false;
+          if (endDate) {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            if (end < caseDate) matchesDate = false;
+          }
+        }
+      }
+
+      return matchesStatus && matchesSearch && matchesDoctor && matchesDate;
+    });
+  }, [cases, caseStatusFilter, caseSearch, selectedDoctorFilter, dateFilterMode, startDate, endDate]);
+
+  // Calculate Doctor's Monthly Total
+  const doctorMonthlyTotal = useMemo(() => {
+    return filteredCases.reduce((sum, c) => sum + (c.totalAmount || c.price || 0), 0);
+  }, [filteredCases]);
+
+  // 1-Click CSV / Excel Export Function
+  const handleDownloadMonthlyCSV = () => {
+    if (filteredCases.length === 0) {
+      alert('No case records found to download for the selected period.');
+      return;
+    }
+
+    const docName = selectedDoctorFilter === 'ALL' ? 'All_Doctors' : selectedDoctorFilter;
+    const monthName = dateFilterMode === 'THIS_MONTH' ? 'Current_Month' : 'Monthly_Statement';
+
+    const headers = [
+      'Case ID',
+      'Date',
+      'Doctor Name',
+      'Clinic / Facility',
+      'Patient Name',
+      'Restoration Service',
+      'Units',
+      'Status',
+      'Amount (INR)',
+      'Invoice Number'
+    ];
+
+    const rows = filteredCases.map((c) => [
+      c.id,
+      c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-IN') : '',
+      c.doctorName || '',
+      c.clinicOrLabName || '',
+      c.patientName || '',
+      c.serviceName || '',
+      c.unitsQuantity || 1,
+      c.status || '',
+      c.totalAmount || c.price || 0,
+      c.invoiceId || 'N/A'
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((row) => row.map((val) => `"${val}"`).join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `CrownDesk_${docName.replace(/[^a-zA-Z0-9]/g, '_')}_${monthName}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Case Assignment
   const handleAssignSubmit = async (e: React.FormEvent) => {
@@ -516,17 +626,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
     { id: 'AUDIT_LOGS', label: 'Audit Logs', icon: ShieldAlert, count: auditLogs.length }
   ];
 
-  // Filtered cases
-  const filteredCases = cases.filter(c => {
-    const matchesStatus = caseStatusFilter === 'ALL' || c.status === caseStatusFilter;
-    const matchesSearch =
-      c.id.toLowerCase().includes(caseSearch.toLowerCase()) ||
-      c.patientName.toLowerCase().includes(caseSearch.toLowerCase()) ||
-      c.doctorName.toLowerCase().includes(caseSearch.toLowerCase()) ||
-      (c.assignedDesignerName && c.assignedDesignerName.toLowerCase().includes(caseSearch.toLowerCase()));
-    return matchesStatus && matchesSearch;
-  });
-
   // Filtered customers
   const filteredCustomers = customers.filter(cust =>
     cust.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -682,10 +781,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       })()}
 
       {/* ========================================================================= */}
-      {/* 2. CASES TAB */}
+      {/* 2. CASES TAB (WITH DOCTOR & MONTHLY STATEMENT FILTER + CSV DOWNLOAD) */}
       {/* ========================================================================= */}
       {activeTab === 'CASES' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
               <h2 className="text-lg font-bold text-slate-100">CAD Case Pipeline & Dispatch Control</h2>
@@ -711,6 +810,125 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
             </div>
           </div>
 
+          {/* DOCTOR-WISE & MONTHLY DATE FILTER TOOLBAR WITH CSV EXPORT */}
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Doctor-wise & Monthly Case Statement Filter
+                </h3>
+              </div>
+
+              {/* Total Billed & Export Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs font-mono bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-emerald-400 font-bold">
+                  Total Billed: ₹{doctorMonthlyTotal.toLocaleString('en-IN')} ({filteredCases.length} Cases)
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadMonthlyCSV}
+                  disabled={filteredCases.length === 0}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+                  title="Download filtered month data as CSV"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV / Excel</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  disabled={filteredCases.length === 0}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+                  title="Print or Save as PDF"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Print Statement</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              {/* 1. Doctor Selector */}
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">Filter Doctor / Clinic</label>
+                <select
+                  value={selectedDoctorFilter}
+                  onChange={(e) => setSelectedDoctorFilter(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="ALL">All Doctors & Clinics</option>
+                  {customers.map((cust) => (
+                    <option key={cust.id} value={cust.name}>
+                      {cust.name} ({cust.clinicOrLabName || 'Dental Practice'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Month / Period Selector */}
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">Time Period</label>
+                <select
+                  value={dateFilterMode}
+                  onChange={(e) => setDateFilterMode(e.target.value as any)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="ALL">All Time History</option>
+                  <option value="THIS_MONTH">This Month ({new Date().toLocaleString('default', { month: 'long' })})</option>
+                  <option value="LAST_MONTH">Previous Month</option>
+                  <option value="CUSTOM">Custom Date Range (From - To)</option>
+                </select>
+              </div>
+
+              {/* 3. Custom Date Range */}
+              {dateFilterMode === 'CUSTOM' && (
+                <>
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1">From Date</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1">To Date</label>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* 4. Reset Filters */}
+              {(selectedDoctorFilter !== 'ALL' || dateFilterMode !== 'ALL') && (
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedDoctorFilter('ALL');
+                      setDateFilterMode('ALL');
+                      setStartDate('');
+                      setEndDate('');
+                    }}
+                    className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition flex items-center justify-center gap-1"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Filters</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead>
@@ -725,53 +943,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredCases.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-800/40 transition">
-                    <td className="py-3 px-2 font-mono font-bold text-purple-300">{c.id}</td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-200">{c.doctorName}</div>
-                      <div className="text-[10px] text-slate-400">{c.clinicOrLabName || 'Dental Practice'}</div>
-                    </td>
-                    <td className="py-3 px-2 text-slate-300 font-medium">{c.patientName}</td>
-                    <td className="py-3 px-2">
-                      <span className="font-semibold text-cyan-300">{c.serviceName}</span>
-                      <span className="text-slate-400 text-[10px] block">({c.unitsQuantity || 1} units)</span>
-                    </td>
-                    <td className="py-3 px-2">
-                      {c.assignedDesignerName ? (
-                        <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-medium text-[11px]">
-                          {c.assignedDesignerName}
-                        </span>
-                      ) : (
-                        <span className="text-rose-400 font-semibold text-[11px]">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-2">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => {
-                            setAssignModal({ open: true, caseId: c.id });
-                            setSelectedDesignerId(c.assignedDesignerId || designers[0]?.id || '');
-                          }}
-                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold text-[11px] shadow transition"
-                        >
-                          Assign
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCase(c)}
-                          className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                {filteredCases.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-10 text-slate-500">
+                      No cases found matching the selected doctor and date range.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredCases.map(c => (
+                    <tr key={c.id} className="hover:bg-slate-800/40 transition">
+                      <td className="py-3 px-2 font-mono font-bold text-purple-300">{c.id}</td>
+                      <td className="py-3 px-2">
+                        <div className="font-bold text-slate-200">{c.doctorName}</div>
+                        <div className="text-[10px] text-slate-400">{c.clinicOrLabName || 'Dental Practice'}</div>
+                      </td>
+                      <td className="py-3 px-2 text-slate-300 font-medium">{c.patientName}</td>
+                      <td className="py-3 px-2">
+                        <span className="font-semibold text-cyan-300">{c.serviceName}</span>
+                        <span className="text-slate-400 text-[10px] block">({c.unitsQuantity || 1} units)</span>
+                      </td>
+                      <td className="py-3 px-2">
+                        {c.assignedDesignerName ? (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-medium text-[11px]">
+                            {c.assignedDesignerName}
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-semibold text-[11px]">Unassigned</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              setAssignModal({ open: true, caseId: c.id });
+                              setSelectedDesignerId(c.assignedDesignerId || designers[0]?.id || '');
+                            }}
+                            className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold text-[11px] shadow transition"
+                          >
+                            Assign
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCase(c)}
+                            className="p-1.5 bg-slate-800 hover:bg-rose-600/30 hover:text-rose-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -841,6 +1067,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
                     </td>
                     <td className="py-3 px-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {/* 1-Click Monthly Ledger View */}
+                        <button
+                          onClick={() => {
+                            setSelectedDoctorFilter(cust.name);
+                            setDateFilterMode('THIS_MONTH');
+                            setActiveTab('CASES');
+                          }}
+                          title="View & Export This Month's Statement"
+                          className="p-1.5 bg-slate-800 hover:bg-cyan-600/30 hover:text-cyan-300 text-slate-300 rounded-lg border border-slate-700 transition"
+                        >
+                          <FolderKanban className="w-3.5 h-3.5 text-cyan-400" />
+                        </button>
                         <button
                           onClick={() => setCustomerModal({ open: true, editingCustomer: cust })}
                           className="p-1.5 bg-slate-800 hover:bg-blue-600/30 hover:text-blue-300 text-slate-300 rounded-lg border border-slate-700 transition"
