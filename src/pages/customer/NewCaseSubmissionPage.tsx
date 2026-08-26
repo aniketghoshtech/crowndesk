@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -17,7 +17,8 @@ import {
   Building,
   Clock,
   Sparkles,
-  Info
+  Info,
+  Check
 } from 'lucide-react';
 
 interface NewCaseSubmissionPageProps {
@@ -54,14 +55,15 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
   const [turnaroundType, setTurnaroundType] = useState<'STANDARD_24H' | 'EXPRESS_12H' | 'RUSH_6H'>('STANDARD_24H');
   const [specialInstructions, setSpecialInstructions] = useState('');
 
-  // ✅ Selected Teeth ডিফল্টভাবে খালি রাখা হয়েছে (আগে ['14', '15'] ছিল)
+  // Selected Teeth
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
 
   // Files
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
 
-  // Promo code
-  const [couponCode, setCouponCode] = useState(initialData?.coupon || 'FIRSTFREE');
+  // Promo code - Default to empty string instead of hardcoded FIRSTFREE
+  const [couponCode, setCouponCode] = useState(initialData?.coupon || '');
+  const [appliedCoupon, setAppliedCoupon] = useState<string>(initialData?.coupon || '');
 
   // Calculation breakdown
   const [pricingCalc, setPricingCalc] = useState<any>(null);
@@ -84,24 +86,83 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
     load();
   }, []);
 
-  // Update live pricing estimate
-  useEffect(() => {
-    if (!selectedServiceId) return;
+  // Find currently selected service object
+  const selectedService = useMemo(() => {
+    return services.find(s => s.id === selectedServiceId || s.code === selectedServiceId) || services[0];
+  }, [services, selectedServiceId]);
+
+  // Robust fallback price calculation
+  const computedPricing = useMemo(() => {
     const units = selectedTeeth.length;
-    if (units === 0) {
+    if (units === 0) return null;
+
+    const baseUnitRate = selectedService?.unitPriceINR || (selectedService as any)?.priceINR || 799;
+    
+    // Turnaround speed multipliers
+    let speedMultiplier = 1;
+    if (turnaroundType === 'EXPRESS_12H') speedMultiplier = 1.2;
+    if (turnaroundType === 'RUSH_6H') speedMultiplier = 1.5;
+
+    const unitPrice = Math.round(baseUnitRate * speedMultiplier);
+    const subtotal = unitPrice * units;
+
+    // Coupon discount logic
+    let discount = 0;
+    const cleanCoupon = (appliedCoupon || '').trim().toUpperCase();
+    if (cleanCoupon === 'FIRSTFREE') {
+      // 1 Unit Free discount
+      discount = unitPrice * 1;
+    } else if (cleanCoupon === 'WELCOME10') {
+      discount = Math.round(subtotal * 0.10);
+    } else if (cleanCoupon === 'BULK20' && units >= 5) {
+      discount = Math.round(subtotal * 0.20);
+    }
+
+    const discountedSubtotal = Math.max(0, subtotal - discount);
+    const taxAmount = Math.round(discountedSubtotal * 0.18);
+    const finalTotalAmount = Math.round(discountedSubtotal + taxAmount);
+
+    return {
+      unitPrice,
+      subtotal,
+      offerDiscountAmount: discount,
+      appliedOfferCode: discount > 0 ? cleanCoupon : undefined,
+      taxPercent: 18,
+      taxAmount,
+      finalTotalAmount
+    };
+  }, [selectedService, selectedTeeth, turnaroundType, appliedCoupon]);
+
+  // Update live pricing estimate from backend API if available
+  useEffect(() => {
+    if (!selectedServiceId || selectedTeeth.length === 0) {
       setPricingCalc(null);
       return;
     }
     const fetchCalc = async () => {
       try {
-        const res = await api.calculatePrice(selectedServiceId, units, couponCode);
-        setPricingCalc(res);
+        const res = await api.calculatePrice(selectedServiceId, selectedTeeth.length, appliedCoupon || undefined);
+        if (res && res.finalTotalAmount !== undefined) {
+          setPricingCalc(res);
+        }
       } catch (e) {
         console.error(e);
       }
     };
     fetchCalc();
-  }, [selectedServiceId, selectedTeeth, couponCode]);
+  }, [selectedServiceId, selectedTeeth.length, appliedCoupon]);
+
+  const activePricing = pricingCalc || computedPricing;
+
+  const handleApplyCoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!couponCode.trim()) {
+      setAppliedCoupon('');
+      return;
+    }
+    setAppliedCoupon(couponCode.trim().toUpperCase());
+    toast.success(`Promo code "${couponCode.toUpperCase()}" applied!`);
+  };
 
   const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -154,7 +215,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
         contactTightness,
         turnaroundType,
         specialInstructions,
-        offerCode: couponCode
+        offerCode: appliedCoupon || undefined
       });
 
       const newCaseId = caseRes.case.id;
@@ -314,7 +375,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
                 >
                   {services.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.name} (₹{s.unitPriceINR})
+                      {s.name} (₹{s.unitPriceINR || (s as any).priceINR || 799})
                     </option>
                   ))}
                 </select>
@@ -465,7 +526,7 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl sticky top-24 space-y-5 text-slate-100">
             <h3 className="text-sm font-bold text-slate-100 pb-3 border-b border-slate-800 flex items-center justify-between">
               <span>Prescription Summary</span>
-              <span className="bg-cyan-500/20 text-cyan-300 text-xs px-2.5 py-0.5 rounded-lg border border-cyan-500/30">
+              <span className="bg-cyan-500/20 text-cyan-300 text-xs px-2.5 py-0.5 rounded-lg border border-cyan-500/30 font-bold font-mono">
                 {selectedTeeth.length} Units
               </span>
             </h3>
@@ -484,40 +545,58 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
                   placeholder="e.g. FIRSTFREE"
                   className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-cyan-300 focus:outline-none focus:border-cyan-500 uppercase"
                 />
+                <button
+                  type="button"
+                  onClick={handleApplyCoupon}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition border border-slate-700"
+                >
+                  Apply
+                </button>
               </div>
+              {appliedCoupon && (
+                <div className="mt-1.5 text-[11px] text-emerald-400 flex items-center gap-1 font-semibold">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Coupon "{appliedCoupon}" Active</span>
+                </div>
+              )}
             </div>
 
             {/* Price Calculations */}
             <div className="bg-slate-950/80 rounded-2xl p-4 border border-slate-800/80 space-y-2.5 text-xs">
               <div className="flex justify-between text-slate-400">
                 <span>Unit Rate:</span>
-                <span>₹{pricingCalc?.unitPrice || 0} / unit</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Subtotal ({selectedTeeth.length} teeth):</span>
-                <span>₹{pricingCalc?.subtotal || 0}</span>
+                <span className="font-mono text-slate-200">
+                  ₹{(activePricing?.unitPrice || (selectedService?.unitPriceINR ?? 799)).toLocaleString('en-IN')} / unit
+                </span>
               </div>
 
-              {Number(pricingCalc?.offerDiscountAmount || 0) > 0 && (
+              <div className="flex justify-between text-slate-400">
+                <span>Subtotal ({selectedTeeth.length} teeth):</span>
+                <span className="font-mono text-slate-200">
+                  ₹{(activePricing?.subtotal || ((selectedService?.unitPriceINR ?? 799) * selectedTeeth.length)).toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              {Number(activePricing?.offerDiscountAmount || 0) > 0 && (
                 <div className="flex justify-between text-emerald-400 font-semibold bg-emerald-950/30 p-2 rounded-lg border border-emerald-800/40">
-                  <span>Offer ({pricingCalc?.appliedOfferCode}):</span>
-                  <span>- ₹{pricingCalc?.offerDiscountAmount}</span>
+                  <span>Offer Discount ({activePricing?.appliedOfferCode || appliedCoupon}):</span>
+                  <span className="font-mono">- ₹{Number(activePricing?.offerDiscountAmount).toLocaleString('en-IN')}</span>
                 </div>
               )}
 
               <div className="flex justify-between text-slate-400">
                 <span>
-                  {pricingCalc?.taxEnabled === false 
-                    ? 'Tax (Exempt/Disabled):' 
-                    : `${pricingCalc?.taxName || 'Tax'} (${pricingCalc?.taxPercent !== undefined ? pricingCalc?.taxPercent : 18}%):`}
+                  GST Tax ({activePricing?.taxPercent !== undefined ? activePricing?.taxPercent : 18}%):
                 </span>
-                <span>₹{pricingCalc?.taxAmount || 0}</span>
+                <span className="font-mono text-slate-200">
+                  ₹{(activePricing?.taxAmount || 0).toLocaleString('en-IN')}
+                </span>
               </div>
 
               <div className="border-t border-slate-800 pt-2.5 flex justify-between items-center text-sm font-bold text-slate-100">
                 <span>Total Amount:</span>
-                <span className="text-xl font-black text-cyan-400">
-                  ₹{pricingCalc?.finalTotalAmount || 0}
+                <span className="text-xl font-black text-cyan-400 font-mono">
+                  ₹{(activePricing?.finalTotalAmount || 0).toLocaleString('en-IN')}
                 </span>
               </div>
             </div>
@@ -536,10 +615,10 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || selectedTeeth.length === 0}
               className="w-full py-3.5 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-sm rounded-xl shadow-xl shadow-cyan-500/25 transition transform active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              <span>{submitting ? 'Dispatching Case to CAD Lab...' : 'Dispatch Case to Designers'}</span>
+              <span>{submitting ? 'Dispatching Case to CAD Lab...' : 'Dispatch Case to Designers →'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -548,3 +627,5 @@ export const NewCaseSubmissionPage: React.FC<NewCaseSubmissionPageProps> = ({
     </div>
   );
 };
+
+export default NewCaseSubmissionPage;
