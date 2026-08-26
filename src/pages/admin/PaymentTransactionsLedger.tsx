@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../../services/api';
 import { PaymentRecord } from '../../types';
 import {
@@ -13,7 +13,6 @@ import {
   RotateCcw,
   QrCode,
   FileCheck,
-  ExternalLink,
   ShieldCheck
 } from 'lucide-react';
 
@@ -67,6 +66,47 @@ export const PaymentTransactionsLedger: React.FC = () => {
     loadPayments();
   };
 
+  // Robust Client-Side Filter + Search with Status Normalization
+  const filteredPayments = useMemo(() => {
+    return payments.filter((p) => {
+      // 1. Search Query Match
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        (p.caseId && p.caseId.toLowerCase().includes(q)) ||
+        (p.invoiceId && p.invoiceId.toLowerCase().includes(q)) ||
+        (p.transactionId && p.transactionId.toLowerCase().includes(q)) ||
+        (p.customerName && p.customerName.toLowerCase().includes(q)) ||
+        (p.customerClinic && p.customerClinic.toLowerCase().includes(q));
+
+      if (!matchesSearch) return false;
+
+      // 2. Status Match
+      if (statusFilter === 'ALL') return true;
+
+      const pStatus = (p.status || '').toUpperCase();
+      const targetFilter = statusFilter.toUpperCase();
+
+      if (targetFilter === 'PAID' || targetFilter === 'SUCCESS') {
+        return pStatus === 'PAID' || pStatus === 'SUCCESS' || pStatus === 'VERIFIED';
+      }
+      if (targetFilter === 'PENDING') {
+        return pStatus === 'PENDING' || pStatus === 'UNPAID';
+      }
+      if (targetFilter === 'PENDING_VERIFICATION') {
+        return pStatus === 'PENDING_VERIFICATION' || pStatus === 'NEEDS_VERIFICATION';
+      }
+      if (targetFilter === 'FAILED' || targetFilter === 'REJECTED') {
+        return pStatus === 'FAILED' || pStatus === 'REJECTED';
+      }
+      if (targetFilter === 'REFUNDED') {
+        return pStatus === 'REFUNDED';
+      }
+
+      return pStatus === targetFilter;
+    });
+  }, [payments, statusFilter, searchQuery]);
+
   const handleApprove = async (paymentId: string) => {
     try {
       setActionLoading(true);
@@ -114,8 +154,11 @@ export const PaymentTransactionsLedger: React.FC = () => {
   };
 
   const getStatusBadge = (status: string) => {
-    switch (status) {
+    const s = (status || '').toUpperCase();
+    switch (s) {
       case 'SUCCESS':
+      case 'PAID':
+      case 'VERIFIED':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
             <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
@@ -123,6 +166,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
           </span>
         );
       case 'PENDING_VERIFICATION':
+      case 'NEEDS_VERIFICATION':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 animate-pulse">
             <Clock className="w-3.5 h-3.5 mr-1" />
@@ -130,12 +174,15 @@ export const PaymentTransactionsLedger: React.FC = () => {
           </span>
         );
       case 'PENDING':
+      case 'UNPAID':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+            <Clock className="w-3.5 h-3.5 mr-1" />
             PENDING
           </span>
         );
       case 'FAILED':
+      case 'REJECTED':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">
             <X className="w-3.5 h-3.5 mr-1" />
@@ -150,7 +197,11 @@ export const PaymentTransactionsLedger: React.FC = () => {
           </span>
         );
       default:
-        return <span className="text-xs text-slate-500">{status}</span>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+            {status}
+          </span>
+        );
     }
   };
 
@@ -224,8 +275,8 @@ export const PaymentTransactionsLedger: React.FC = () => {
               className="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:ring-2 focus:ring-teal-500 focus:outline-none"
             >
               <option value="ALL">All Payment Statuses</option>
+              <option value="PAID">Verified / Paid</option>
               <option value="PENDING_VERIFICATION">Needs Verification</option>
-              <option value="SUCCESS">Verified / Paid</option>
               <option value="PENDING">Pending</option>
               <option value="FAILED">Rejected</option>
               <option value="REFUNDED">Refunded</option>
@@ -265,112 +316,120 @@ export const PaymentTransactionsLedger: React.FC = () => {
                     <span>Loading payment transactions ledger...</span>
                   </td>
                 </tr>
-              ) : payments.length === 0 ? (
+              ) : filteredPayments.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
-                    No payment records found matching your filters.
+                    <p className="font-semibold text-slate-600">No payment records found</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      No records match the selected filter "{statusFilter === 'ALL' ? 'All' : statusFilter}".
+                    </p>
                   </td>
                 </tr>
               ) : (
-                payments.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-900">{p.caseId}</div>
-                      {p.invoiceId ? (
-                        <span className="inline-block mt-0.5 text-[10px] font-mono font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
-                          {p.invoiceId}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400">Invoice pending</span>
-                      )}
-                    </td>
+                filteredPayments.map((p) => {
+                  const isPaid = (p.status || '').toUpperCase() === 'PAID' || (p.status || '').toUpperCase() === 'SUCCESS' || (p.status || '').toUpperCase() === 'VERIFIED';
+                  const isPendingVerification = (p.status || '').toUpperCase() === 'PENDING_VERIFICATION' || (p.status || '').toUpperCase() === 'NEEDS_VERIFICATION';
 
-                    <td className="py-3.5 px-4">
-                      <div className="font-medium text-slate-900">{p.customerName}</div>
-                      <div className="text-xs text-slate-500">{p.customerClinic || 'Dental Clinic'}</div>
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-1.5">
-                        <QrCode className="w-4 h-4 text-teal-600 shrink-0" />
-                        <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-                          {p.transactionId || 'N/A'}
-                        </span>
-                      </div>
-                      {p.paymentScreenshot && (
-                        <a
-                          href={p.paymentScreenshot}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-600 hover:underline mt-1"
-                        >
-                          <FileCheck className="w-3 h-3" />
-                          <span>View Screenshot Proof</span>
-                        </a>
-                      )}
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900">
-                        ₹{(p.amount ?? 0).toLocaleString()}
-                      </div>
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      {getStatusBadge(p.status)}
-                    </td>
-
-                    <td className="py-3.5 px-4 text-xs text-slate-500">
-                      {new Date(p.createdAt).toLocaleDateString()} {new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end space-x-1.5">
-                        <button
-                          onClick={() => setSelectedPayment(p)}
-                          className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                          title="View Payment Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-
-                        {/* If Pending Verification: Show Approve and Reject */}
-                        {p.status === 'PENDING_VERIFICATION' && (
-                          <>
-                            <button
-                              onClick={() => handleApprove(p.id)}
-                              disabled={actionLoading}
-                              className="px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center space-x-1 shadow-sm"
-                              title="Verify UPI payment and unlock CAD files"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Verify & Unlock</span>
-                            </button>
-                            <button
-                              onClick={() => setRejectModal({ open: true, paymentId: p.id, reason: '12-digit UTR reference not found in bank account.' })}
-                              disabled={actionLoading}
-                              className="px-2 py-1 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-colors"
-                              title="Reject invalid UPI proof"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </>
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-slate-900">{p.caseId}</div>
+                        {p.invoiceId ? (
+                          <span className="inline-block mt-0.5 text-[10px] font-mono font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                            {p.invoiceId}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">Invoice pending</span>
                         )}
+                      </td>
 
-                        {/* If Success: Allow Refund */}
-                        {p.status === 'SUCCESS' && (
-                          <button
-                            onClick={() => setRefundModal({ open: true, paymentId: p.id, reason: 'Customer requested case cancellation.' })}
-                            className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                            title="Issue Refund"
+                      <td className="py-3.5 px-4">
+                        <div className="font-medium text-slate-900">{p.customerName}</div>
+                        <div className="text-xs text-slate-500">{p.customerClinic || 'Dental Clinic'}</div>
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <QrCode className="w-4 h-4 text-teal-600 shrink-0" />
+                          <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                            {p.transactionId || 'N/A'}
+                          </span>
+                        </div>
+                        {p.paymentScreenshot && (
+                          <a
+                            href={p.paymentScreenshot}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-600 hover:underline mt-1"
                           >
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
+                            <FileCheck className="w-3 h-3" />
+                            <span>View Screenshot Proof</span>
+                          </a>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900">
+                          ₹{(p.amount ?? 0).toLocaleString('en-IN')}
+                        </div>
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        {getStatusBadge(p.status)}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-xs text-slate-500">
+                        {new Date(p.createdAt).toLocaleDateString()} {new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={() => setSelectedPayment(p)}
+                            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="View Payment Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* If Pending Verification: Show Approve and Reject */}
+                          {isPendingVerification && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(p.id)}
+                                disabled={actionLoading}
+                                className="px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center space-x-1 shadow-sm"
+                                title="Verify UPI payment and unlock CAD files"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Verify & Unlock</span>
+                              </button>
+                              <button
+                                onClick={() => setRejectModal({ open: true, paymentId: p.id, reason: '12-digit UTR reference not found in bank account.' })}
+                                disabled={actionLoading}
+                                className="px-2 py-1 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-colors"
+                                title="Reject invalid UPI proof"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+
+                          {/* If Success/Paid: Allow Refund */}
+                          {isPaid && (
+                            <button
+                              onClick={() => setRefundModal({ open: true, paymentId: p.id, reason: 'Customer requested case cancellation.' })}
+                              className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                              title="Issue Refund"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -406,7 +465,7 @@ export const PaymentTransactionsLedger: React.FC = () => {
               <div className="flex justify-between py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Amount</span>
                 <span className="font-black text-slate-900 text-base">
-                  ₹{(selectedPayment.amount ?? 0).toLocaleString()}
+                  ₹{(selectedPayment.amount ?? 0).toLocaleString('en-IN')}
                 </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">

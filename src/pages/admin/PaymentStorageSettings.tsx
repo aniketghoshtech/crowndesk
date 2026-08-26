@@ -18,8 +18,61 @@ import {
   Sparkles
 } from 'lucide-react';
 
-export const PaymentStorageSettings: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'UPI_PAYMENTS' | 'STORAGE' | 'SETTLEMENT_POLICIES'>('UPI_PAYMENTS');
+// Default Fallback Settings to prevent infinite loading
+const DEFAULT_PAYMENT_SETTINGS: FullPaymentSettings = {
+  providers: {
+    upi: {
+      id: 'gw-upi',
+      provider: 'UPI',
+      name: 'CrownDesk UPI Payment',
+      enabled: true,
+      businessName: 'CrownDesk Dental Technologies',
+      upiId: '9058322251@paytm',
+      upiDisplayName: 'CrownDesk Digital Dental Lab (Anurag Nishad)',
+      upiQrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental%20CAD&cu=INR',
+      currency: 'INR',
+      upiInstructions: 'Scan with Google Pay, PhonePe, Paytm, BHIM, Cred, or Amazon Pay. Enter the 12-digit UPI UTR / Reference ID and upload payment screenshot for reconciliation.',
+      verificationMode: 'MANUAL_ADMIN',
+      connectionStatus: 'CONNECTED'
+    }
+  },
+  settlement: {
+    businessName: 'CrownDesk Dental CAD Lab & Technologies',
+    businessEmail: 'supportcrwundesk@gmail.com',
+    businessPhone: '+91 9058322251',
+    bankAccountName: 'CrownDesk Dental Technologies',
+    bankAccountNumber: '',
+    bankIfscCode: '',
+    bankName: ''
+  },
+  policy: {
+    paymentTiming: 'BEFORE_FINAL_DOWNLOAD',
+    enableGST: true,
+    taxEnabled: true,
+    taxName: 'GST (Goods & Services Tax)',
+    gstRatePercent: 18,
+    taxPercent: 18
+  }
+};
+
+const DEFAULT_STORAGE_CONFIG: StorageConfig = {
+  provider: 'LOCAL_ENCRYPTED',
+  connectionStatus: 'CONNECTED',
+  bucketName: 'crowndesk-medical-cad-vault',
+  region: 'ap-south-1 (Mumbai)',
+  signedUrlExpiryMinutes: 60,
+  maxUploadSizeMb: 100,
+  allowedExtensions: ['.stl', '.ply', '.obj', '.dcm', '.zip']
+};
+
+interface PaymentStorageSettingsProps {
+  initialSubTab?: 'UPI_PAYMENTS' | 'STORAGE' | 'SETTLEMENT_POLICIES';
+}
+
+export const PaymentStorageSettings: React.FC<PaymentStorageSettingsProps> = ({
+  initialSubTab = 'UPI_PAYMENTS'
+}) => {
+  const [activeSubTab, setActiveSubTab] = useState<'UPI_PAYMENTS' | 'STORAGE' | 'SETTLEMENT_POLICIES'>(initialSubTab);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
@@ -28,9 +81,15 @@ export const PaymentStorageSettings: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Form State
-  const [paymentSettings, setPaymentSettings] = useState<FullPaymentSettings | null>(null);
-  const [storageConfig, setStorageConfig] = useState<StorageConfig | null>(null);
+  // Form State with Initial Defaults
+  const [paymentSettings, setPaymentSettings] = useState<FullPaymentSettings>(DEFAULT_PAYMENT_SETTINGS);
+  const [storageConfig, setStorageConfig] = useState<StorageConfig>(DEFAULT_STORAGE_CONFIG);
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   useEffect(() => {
     loadSettings();
@@ -40,14 +99,27 @@ export const PaymentStorageSettings: React.FC = () => {
     try {
       setLoading(true);
       setErrorMsg('');
-      const [payRes, storRes] = await Promise.all([
+      const [payRes, storRes] = await Promise.allSettled([
         api.getAdminPaymentSettings(),
         api.getAdminStorageSettings()
       ]);
-      setPaymentSettings(payRes.paymentSettings);
-      setStorageConfig(storRes.storageConfig);
+
+      if (payRes.status === 'fulfilled' && payRes.value?.paymentSettings) {
+        setPaymentSettings(payRes.value.paymentSettings);
+      } else {
+        setPaymentSettings(DEFAULT_PAYMENT_SETTINGS);
+      }
+
+      if (storRes.status === 'fulfilled' && storRes.value?.storageConfig) {
+        setStorageConfig(storRes.value.storageConfig);
+      } else {
+        setStorageConfig(DEFAULT_STORAGE_CONFIG);
+      }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to load configuration.');
+      console.error('Settings load warning:', err);
+      setErrorMsg('Loaded default configuration.');
+      setPaymentSettings(DEFAULT_PAYMENT_SETTINGS);
+      setStorageConfig(DEFAULT_STORAGE_CONFIG);
     } finally {
       setLoading(false);
     }
@@ -61,12 +133,13 @@ export const PaymentStorageSettings: React.FC = () => {
 
   const handleSavePaymentSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!paymentSettings) return;
     try {
       setSaving(true);
       setErrorMsg('');
       const res = await api.updateAdminPaymentSettings(paymentSettings);
-      setPaymentSettings(res.paymentSettings);
+      if (res?.paymentSettings) {
+        setPaymentSettings(res.paymentSettings);
+      }
       setSaveSuccessMsg('UPI payment configuration & policies saved successfully.');
       setTimeout(() => setSaveSuccessMsg(''), 4000);
     } catch (err: any) {
@@ -78,12 +151,13 @@ export const PaymentStorageSettings: React.FC = () => {
 
   const handleSaveStorageSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!storageConfig) return;
     try {
       setSaving(true);
       setErrorMsg('');
       const res = await api.updateAdminStorageSettings(storageConfig);
-      setStorageConfig(res.storageConfig);
+      if (res?.storageConfig) {
+        setStorageConfig(res.storageConfig);
+      }
       setSaveSuccessMsg('Cloud storage configuration updated successfully.');
       setTimeout(() => setSaveSuccessMsg(''), 4000);
     } catch (err: any) {
@@ -141,7 +215,7 @@ export const PaymentStorageSettings: React.FC = () => {
     }
   };
 
-  if (loading || !paymentSettings || !storageConfig) {
+  if (loading && !paymentSettings && !storageConfig) {
     return (
       <div className="flex items-center justify-center p-16">
         <div className="flex items-center space-x-3 text-slate-500">
@@ -152,21 +226,7 @@ export const PaymentStorageSettings: React.FC = () => {
     );
   }
 
-  const upi = paymentSettings.providers.upi || {
-    id: 'gw-upi',
-    provider: 'UPI',
-    name: 'CrownDesk UPI Payment',
-    enabled: true,
-    businessName: 'CrownDesk Dental Technologies',
-    upiId: '9058322251@paytm',
-    upiDisplayName: 'CrownDesk Digital Dental Lab (Anurag Nishad)',
-    upiQrImageUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=upi://pay?pa=9058322251@paytm&pn=CrownDesk%20Dental%20CAD&cu=INR',
-    currency: 'INR',
-    upiInstructions: 'Scan with Google Pay, PhonePe, Paytm, BHIM, Cred, or Amazon Pay. Enter the 12-digit UPI UTR / Reference ID and upload payment screenshot for reconciliation.',
-    verificationMode: 'MANUAL_ADMIN',
-    connectionStatus: 'CONNECTED'
-  };
-
+  const upi = paymentSettings?.providers?.upi || DEFAULT_PAYMENT_SETTINGS.providers.upi;
   const currentUpiQr = upi.upiQrImageUrl || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${upi.upiId || '9058322251@paytm'}&pn=${encodeURIComponent(upi.businessName || 'CrownDesk')}&cu=INR`)}`;
 
   return (

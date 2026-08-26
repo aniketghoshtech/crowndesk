@@ -197,7 +197,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
   const [seoForm, setSeoForm] = useState({ siteTitle: '', metaDescription: '', keywords: '', canonicalUrl: '', contactPhone: '', contactEmail: '' });
   const [seoSaveMsg, setSeoSaveMsg] = useState('');
 
-  // General Settings Form
+  // General Settings Form with all parameters
   const [settingsForm, setSettingsForm] = useState({
     platformName: 'CrownDesk Precision Dental CAD',
     supportEmail: 'supportcrwundesk@gmail.com',
@@ -271,7 +271,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       }
       if (setRes?.settings) {
         setGeneralSettings(setRes.settings);
-        setSettingsForm(setRes.settings);
+        setSettingsForm({
+          ...settingsForm,
+          ...setRes.settings
+        });
       }
       if (audRes?.logs) setAuditLogs(audRes.logs);
     } catch (err) {
@@ -607,7 +610,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         </div>
       </div>
 
-      {/* 17-Item Admin Navigation Bar */}
+      {/* 15-Item Admin Navigation Bar */}
       <div className="bg-slate-900/90 border border-slate-800 p-2 rounded-2xl shadow-xl overflow-x-auto">
         <div className="flex items-center gap-1 min-w-max">
           {navItems.map(item => {
@@ -648,12 +651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
         const kpiNewCases = analytics?.kpis?.newCases ?? cases.filter(c => c.status === 'NEW').length;
         const kpiActiveCases = analytics?.kpis?.activeCases ?? cases.filter(c => ['RECEIVED', 'ASSIGNED', 'IN_DESIGN', 'QC', 'APPROVAL', 'REVISION'].includes(c.status)).length;
         const kpiCompletedCases = analytics?.kpis?.completedCases ?? cases.filter(c => ['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-        const kpiPendingCases = analytics?.kpis?.pendingCases ?? cases.filter(c => !['COMPLETED', 'DELIVERED'].includes(c.status)).length;
-        const kpiTotalRevenue = analytics?.kpis?.totalRevenue ?? analytics?.totalRevenueINR ?? 0;
-        const kpiTodayRevenue = analytics?.kpis?.todayRevenue ?? 0;
-        const kpiPendingPayments = analytics?.kpis?.pendingPayments ?? cases.filter(c => c.paymentStatus === 'PENDING').length;
         const kpiTotalCustomers = analytics?.kpis?.totalCustomers ?? customers.length;
-        const kpiActiveDesigners = analytics?.kpis?.activeDesigners ?? designers.filter(d => d.isActive !== false).length;
 
         return (
           <div className="space-y-6">
@@ -1258,12 +1256,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
       {/* ========================================================================= */}
       {activeTab === 'STORAGE' && (
         <div className="space-y-6">
-          <PaymentStorageSettings />
+          <PaymentStorageSettings initialSubTab="STORAGE" />
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 14. SETTINGS TAB */}
+      {/* 14. SETTINGS TAB - RESTORED WITH ALL BUSINESS & TAX FIELDS */}
       {/* ========================================================================= */}
       {activeTab === 'SETTINGS' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 text-xs text-slate-100">
@@ -1279,35 +1277,126 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialCaseId, i
             </div>
           )}
 
-          <form onSubmit={handleSaveSettings} className="space-y-4 max-w-3xl">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Official Support Email</label>
-                <input
-                  type="email"
-                  value={settingsForm.supportEmail}
-                  onChange={e => setSettingsForm({ ...settingsForm, supportEmail: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
-                />
+          <form onSubmit={handleSaveSettings} className="space-y-6 max-w-4xl">
+            {/* Section 1: Business Brand & Legal Identity */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-purple-400 border-b border-slate-800/80 pb-2">
+                Brand & Contact Identity
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Platform Brand / Lab Name</label>
+                  <input
+                    type="text"
+                    value={settingsForm.platformName || ''}
+                    onChange={e => setSettingsForm({ ...settingsForm, platformName: e.target.value })}
+                    placeholder="CrownDesk Precision Dental CAD"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Official Support Email</label>
+                  <input
+                    type="email"
+                    value={settingsForm.supportEmail || ''}
+                    onChange={e => setSettingsForm({ ...settingsForm, supportEmail: e.target.value })}
+                    placeholder="supportcrwundesk@gmail.com"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Official Support Phone</label>
+                  <input
+                    type="text"
+                    value={settingsForm.supportPhone || ''}
+                    onChange={e => setSettingsForm({ ...settingsForm, supportPhone: e.target.value })}
+                    placeholder="+91 9058322251"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Official Support Phone</label>
+                <label className="block font-semibold text-slate-300 mb-1">Headquarters / Clinical Lab Physical Address</label>
                 <input
                   type="text"
-                  value={settingsForm.supportPhone}
-                  onChange={e => setSettingsForm({ ...settingsForm, supportPhone: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100"
+                  value={settingsForm.supportAddress || ''}
+                  onChange={e => setSettingsForm({ ...settingsForm, supportAddress: e.target.value })}
+                  placeholder="8A/GN/262, Lowyer Colony, Agra, India"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
                 />
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl shadow transition"
-            >
-              Update Platform Settings
-            </button>
+            {/* Section 2: Billing & Tax Rates */}
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-purple-400">
+                  Billing, GST & Tax Rates
+                </h3>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <span className="text-slate-400 text-[11px]">Enable Tax / GST:</span>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.taxEnabled !== false}
+                    onChange={e => setSettingsForm({ ...settingsForm, taxEnabled: e.target.checked })}
+                    className="rounded border-slate-700 bg-slate-950 text-purple-600 focus:ring-purple-500"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Tax Designation / Name</label>
+                  <input
+                    type="text"
+                    value={settingsForm.taxName || 'GST (Goods & Services Tax)'}
+                    onChange={e => setSettingsForm({ ...settingsForm, taxName: e.target.value })}
+                    placeholder="GST (Goods & Services Tax)"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">GST / Tax Rate (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={settingsForm.taxGstPercent ?? settingsForm.taxPercent ?? 18}
+                    onChange={e => {
+                      const val = parseFloat(e.target.value) || 0;
+                      setSettingsForm({ ...settingsForm, taxGstPercent: val, taxPercent: val });
+                    }}
+                    placeholder="18"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Default Platform Currency</label>
+                  <input
+                    type="text"
+                    value={settingsForm.defaultCurrency || 'INR'}
+                    onChange={e => setSettingsForm({ ...settingsForm, defaultCurrency: e.target.value })}
+                    placeholder="INR"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-slate-100 font-mono focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-800">
+              <button
+                type="submit"
+                className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-purple-600/30 transition"
+              >
+                Update Platform Settings
+              </button>
+            </div>
           </form>
         </div>
       )}
