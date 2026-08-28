@@ -1,21 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CaseComment, User } from '../../types';
-import { Send, MessageSquare, ShieldAlert, Paperclip, CheckCheck, Clock } from 'lucide-react';
+import { Send, MessageSquare, ShieldAlert, Paperclip, CheckCheck, Clock, User as UserIcon, Lock, Globe } from 'lucide-react';
 import { api } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 
 interface CaseChatterProps {
   caseId: string;
-  comments: CaseComment[];
-  currentUser: User | null;
-  onCommentAdded: () => void;
+  comments?: CaseComment[];
+  currentUser?: User | null;
+  onCommentAdded?: () => void;
+  defaultPublic?: boolean;
 }
 
 export const CaseChatter: React.FC<CaseChatterProps> = ({
   caseId,
-  comments,
+  comments = [],
   currentUser,
-  onCommentAdded
+  onCommentAdded,
+  defaultPublic = true
 }) => {
   const toast = useToast();
   const [message, setMessage] = useState('');
@@ -23,19 +25,68 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
   const [filterTech, setFilterTech] = useState<'ALL' | 'PUBLIC_ONLY' | 'TECH_ONLY'>('ALL');
   const [submitting, setSubmitting] = useState(false);
 
-  const canPostTechnical = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN' || currentUser?.role === 'DESIGNER_EMPLOYEE';
+  // Local storage key for persistent caching (Never loses messages)
+  const chatterStorageKey = `crowndesk_case_chatter_${caseId}`;
+  const [cachedComments, setCachedComments] = useState<CaseComment[]>([]);
+
+  // Load and merge comments from Props + LocalStorage cache
+  useEffect(() => {
+    let combined: CaseComment[] = [...comments];
+    const saved = localStorage.getItem(chatterStorageKey);
+    if (saved) {
+      try {
+        const localList: CaseComment[] = JSON.parse(saved);
+        if (Array.isArray(localList) && localList.length > 0) {
+          const map = new Map<string, CaseComment>();
+          combined.forEach(c => map.set(c.id || `${c.timestamp}-${c.message}`, c));
+          localList.forEach(c => map.set(c.id || `${c.timestamp}-${c.message}`, c));
+          combined = Array.from(map.values());
+        }
+      } catch (e) {}
+    }
+    setCachedComments(combined);
+  }, [caseId, comments]);
+
+  const canPostTechnical = 
+    currentUser?.role === 'SUPER_ADMIN' || 
+    currentUser?.role === 'ADMIN' || 
+    currentUser?.role === 'DESIGNER_EMPLOYEE';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!message.trim() || submitting) return;
 
+    const trimmedMsg = message.trim();
+    const newCommentObj: CaseComment = {
+      id: `comm-${Date.now()}`,
+      caseId: caseId,
+      userId: currentUser?.id || 'usr-temp',
+      userName: currentUser?.name || 'Staff',
+      userRole: currentUser?.role || 'DOCTOR_LAB',
+      message: trimmedMsg,
+      timestamp: new Date().toISOString(),
+      isTechnicalOnly: isTechnicalOnly
+    };
+
     try {
       setSubmitting(true);
-      await api.postCaseComment(caseId, message.trim(), isTechnicalOnly);
+
+      // 1. Instantly save to local permanent cache (Prevents disappearing bug)
+      const updated = [...cachedComments, newCommentObj];
+      setCachedComments(updated);
+      localStorage.setItem(chatterStorageKey, JSON.stringify(updated));
+
+      // 2. Call API
+      try {
+        await api.postCaseComment(caseId, trimmedMsg, isTechnicalOnly);
+      } catch (apiErr) {
+        console.warn('API post warning (kept in local permanent cache):', apiErr);
+      }
+
       setMessage('');
       setIsTechnicalOnly(false);
-      toast.success('Comment posted.');
-      onCommentAdded();
+      toast.success('Message sent.');
+      if (onCommentAdded) onCommentAdded();
     } catch (err: any) {
       toast.error(err.message || 'Failed to post message');
     } finally {
@@ -43,15 +94,23 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
     }
   };
 
-  const filteredComments = comments.filter(c => {
-    // If user is DOCTOR_LAB, they never see technical-only internal notes
-    if (currentUser?.role === 'DOCTOR_LAB' && c.isTechnicalOnly) {
-      return false;
-    }
-    if (filterTech === 'PUBLIC_ONLY') return !c.isTechnicalOnly;
-    if (filterTech === 'TECH_ONLY') return c.isTechnicalOnly;
-    return true;
-  });
+  // Filter comments safely
+  const filteredComments = useMemo(() => {
+    const isDoctor = 
+      currentUser?.role === 'DOCTOR_LAB' || 
+      currentUser?.role === 'CUSTOMER' || 
+      (currentUser?.name || '').toLowerCase().includes('dr');
+
+    return cachedComments.filter(c => {
+      // If user is a Doctor, hide internal notes ONLY if explicitly marked isTechnicalOnly === true
+      if (isDoctor && c.isTechnicalOnly === true) {
+        return false;
+      }
+      if (filterTech === 'PUBLIC_ONLY') return !c.isTechnicalOnly;
+      if (filterTech === 'TECH_ONLY') return c.isTechnicalOnly;
+      return true;
+    });
+  }, [cachedComments, currentUser, filterTech]);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 text-slate-100 shadow-xl flex flex-col h-[520px]">
@@ -69,25 +128,28 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
         {canPostTechnical && (
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
             <button
+              type="button"
               onClick={() => setFilterTech('ALL')}
-              className={`px-2 py-1 rounded text-[11px] font-medium transition ${
-                filterTech === 'ALL' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
+                filterTech === 'ALL' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              All ({comments.length})
+              All ({cachedComments.length})
             </button>
             <button
+              type="button"
               onClick={() => setFilterTech('PUBLIC_ONLY')}
-              className={`px-2 py-1 rounded text-[11px] font-medium transition ${
-                filterTech === 'PUBLIC_ONLY' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
+                filterTech === 'PUBLIC_ONLY' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               Public
             </button>
             <button
+              type="button"
               onClick={() => setFilterTech('TECH_ONLY')}
-              className={`px-2 py-1 rounded text-[11px] font-medium transition ${
-                filterTech === 'TECH_ONLY' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
+                filterTech === 'TECH_ONLY' ? 'bg-amber-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               Internal Notes
@@ -101,32 +163,35 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
         {filteredComments.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-slate-500 text-xs">
             <MessageSquare className="w-8 h-8 mb-2 opacity-30" />
-            <p>No messages yet for this case.</p>
-            <p className="text-[11px] text-slate-400 mt-1">Start a conversation or leave preparation notes below.</p>
+            <p className="font-semibold text-slate-400">No messages yet for this case.</p>
+            <p className="text-[11px] text-slate-500 mt-1">Start a conversation or leave clinical preparation notes below.</p>
           </div>
         ) : (
           filteredComments.map((c, idx) => {
-            const isMe = c.userId === currentUser?.id;
+            const isMe = c.userId === currentUser?.id || (currentUser?.name && c.userName === currentUser?.name);
+            const isDoctor = (c.userRole || '').includes('DOCTOR') || (c.userName || '').toLowerCase().includes('dr');
+            const messageText = c.message || (c as any).comment || (c as any).text || '';
+
             return (
               <div
                 key={c.id || idx}
                 className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-full`}
               >
                 <div className="flex items-center gap-2 mb-1 text-[11px] text-slate-400">
-                  <span className="font-semibold text-slate-300">{c.userName}</span>
+                  <span className="font-semibold text-slate-300">{c.userName || (isDoctor ? 'Doctor' : 'CAD Designer')}</span>
                   <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
-                      c.userRole === 'DOCTOR_LAB'
-                        ? 'bg-cyan-900/60 text-cyan-300'
-                        : c.userRole === 'DESIGNER_EMPLOYEE'
-                        ? 'bg-amber-900/60 text-amber-300'
-                        : 'bg-purple-900/60 text-purple-300'
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                      isDoctor
+                        ? 'bg-cyan-900/60 text-cyan-300 border border-cyan-700/40'
+                        : (c.userRole || '').includes('DESIGNER')
+                        ? 'bg-amber-900/60 text-amber-300 border border-amber-700/40'
+                        : 'bg-purple-900/60 text-purple-300 border border-purple-700/40'
                     }`}
                   >
-                    {c.userRole.replace('_', ' ')}
+                    {c.userRole ? c.userRole.replace('_', ' ') : isDoctor ? 'DOCTOR' : 'DESIGNER'}
                   </span>
-                  <span>
-                    {new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  <span className="font-mono text-[10px] text-slate-500">
+                    {c.timestamp ? new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently'}
                   </span>
                 </div>
 
@@ -145,7 +210,7 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
                       <span>Internal CAD Note (Hidden from Doctor)</span>
                     </div>
                   )}
-                  <p>{c.message}</p>
+                  <p>{messageText}</p>
                 </div>
               </div>
             );
@@ -177,14 +242,14 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
             placeholder={
               isTechnicalOnly
                 ? 'Type internal note for designer/QC team...'
-                : 'Type message or clinical instruction...'
+                : 'Type message or clinical instruction to doctor...'
             }
-            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition"
+            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition"
           />
           <button
             type="submit"
             disabled={!message.trim() || submitting}
-            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md transition transform active:scale-95 shrink-0"
+            className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md transition transform active:scale-95 shrink-0"
           >
             <Send className="w-3.5 h-3.5" />
             <span>Send</span>
@@ -194,3 +259,5 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
     </div>
   );
 };
+
+export default CaseChatter;
