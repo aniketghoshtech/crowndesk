@@ -206,7 +206,7 @@ router.post('/employees', requireAdmin, async (req: Request, res: Response): Pro
   }
 });
 
-// 4. Reset Password & Toggle Status
+// 4a. Reset Password & Toggle Status
 router.post('/employees/:id/reset-password', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const targetUser = db.findUserById(req.params.id) || db.findUserByEmail(req.params.id);
@@ -252,11 +252,69 @@ router.patch('/employees/:id/toggle-status', requireAdmin, async (req: Request, 
   }
 });
 
+// 4b. DELETE /api/admin/employees/:id & /api/admin/users/:id (FIXED: PERMANENT DELETE)
+router.delete(['/employees/:id', '/users/:id'], requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const target = db.findUserById(id) || db.findUserByEmail(id);
+    if (target) {
+      db.deleteUser(target.id);
+    }
+    try {
+      await supabase.from('profiles').delete().or(`id.eq.${id},email.eq.${id}`);
+    } catch (e) {
+      console.warn('Supabase delete profile warning:', e);
+    }
+    res.json({ message: 'Employee / User deleted successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete user.' });
+  }
+});
+
+// 4c. PUT /api/admin/employees/:id & /api/admin/users/:id (Update Staff/Designer)
+router.put(['/employees/:id', '/users/:id'], requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const target = db.findUserById(id) || db.findUserByEmail(id);
+    const { name, fullName, email, phone, specialization, role, isActive, password } = req.body;
+    const targetName = name || fullName;
+
+    if (target) {
+      if (targetName) target.name = targetName.trim();
+      if (email) target.email = email.trim().toLowerCase();
+      if (phone !== undefined) target.phone = phone;
+      if (specialization !== undefined) target.specialization = specialization;
+      if (role !== undefined) target.role = role;
+      if (isActive !== undefined) target.isActive = Boolean(isActive);
+      if (password && password.trim()) target.passwordHash = hashPassword(password.trim());
+      target.updatedAt = new Date().toISOString();
+      db.updateUser(target.id, target);
+    }
+
+    try {
+      await supabase.from('profiles').upsert({
+        id: target?.id || id,
+        email: email ? email.trim().toLowerCase() : undefined,
+        name: targetName ? targetName.trim() : undefined,
+        phone: phone,
+        specialization: specialization,
+        role: role,
+        is_active: isActive !== undefined ? Boolean(isActive) : true,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {}
+
+    res.json({ message: 'Employee / User updated successfully.', employee: target });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update employee.' });
+  }
+});
+
 // =========================================================================
 // ৫. কাস্টমার ম্যানেজমেন্ট (CUSTOMERS) - ক্লাউড সিঙ্ক
 // =========================================================================
 
-// 5a. GET /api/admin/customers - ক্লাউড ডাটাবেস থেকে সব ডক্টর ও ল্যাব আনবে
+// 5a. GET /api/admin/customers
 router.get('/customers', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     let cloudCustomers: any[] = [];
@@ -313,7 +371,7 @@ router.get('/customers', requireAdmin, async (req: Request, res: Response): Prom
   }
 });
 
-// 5b. POST /api/admin/customers - ক্লাউডে সরাসরি পারমানেন্ট কাস্টমার সেভ
+// 5b. POST /api/admin/customers
 router.post('/customers', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const adminUser = (req as any).adminUser as User;

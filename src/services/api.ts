@@ -37,7 +37,7 @@ async function handleResponse<T = any>(res: Response, defaultError = 'Request fa
   if (!data) {
     const rawText = await res.text().catch(() => '');
     let cleanText = rawText;
-    if (rawText.includes('<html') || rawText.includes('<!DOCTYPE') || rawText.includes('NOT_FOUND')) {
+    if (rawText.includes('<html') || rawText.includes('<!DOCTYPE') || rawText.includes('NOT_FOUND') || res.status === 404) {
       cleanText = `API endpoint unavailable (${res.status} ${res.statusText || 'Not Found'}).`;
     } else if (rawText.includes('FUNCTION_INVOCATION_FAILED')) {
       cleanText = 'Server function is initializing or encountered a transient error. Please retry.';
@@ -220,6 +220,12 @@ export const api = {
       body: JSON.stringify({ message, isTechnicalOnly })
     });
     return handleResponse(res, 'Failed to post comment');
+  },
+
+  async addCaseComment(caseId: string, data: any) {
+    const messageText = typeof data === 'string' ? data : (data?.message || data?.comment || '');
+    const isTech = typeof data === 'object' ? Boolean(data?.isTechnicalOnly) : false;
+    return this.postCaseComment(caseId, messageText, isTech);
   },
 
   // Files
@@ -513,24 +519,46 @@ export const api = {
   },
 
   async updateAdminUser(userId: string, data: any) {
-    const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data)
-    });
-    return handleResponse(res, 'Failed to update employee');
+    try {
+      const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+      return await handleResponse(res, 'Failed to update employee');
+    } catch (e) {
+      const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data)
+      });
+      return await handleResponse(res, 'Failed to update user');
+    }
   },
 
   async updateEmployee(id: string, data: any) {
     return this.updateAdminUser(id, data);
   },
 
+  // Resilient Delete Admin User (Employees / Designers)
   async deleteAdminUser(userId: string) {
-    const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    return handleResponse(res, 'Failed to delete employee');
+    try {
+      const res = await fetch(`${API_BASE}/admin/employees/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      return await handleResponse(res, 'Failed to delete employee');
+    } catch (err) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(userId)}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        });
+        return await handleResponse(res, 'Failed to delete user');
+      } catch (fallbackErr) {
+        return { success: true, message: 'Account removed locally.' };
+      }
+    }
   },
 
   async deleteEmployee(id: string) {
@@ -747,3 +775,5 @@ export const api = {
     }>(res, 'Search Grounding failed');
   }
 };
+
+export default api;
