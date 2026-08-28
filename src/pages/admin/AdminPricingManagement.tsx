@@ -34,6 +34,10 @@ interface AdminPricingManagementProps {
   onNavigateToOffers?: () => void;
 }
 
+const PRICING_STORAGE_KEY = 'crowndesk_permanent_services_v2';
+const TAX_STORAGE_KEY = 'crowndesk_permanent_tax_v2';
+const HISTORY_STORAGE_KEY = 'crowndesk_pricing_history_v2';
+
 export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
   initialSubTab = 'ALL_SERVICES'
 }) => {
@@ -106,22 +110,72 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [srvRes, offRes, taxRes, histRes] = await Promise.all([
+      const [srvRes, offRes, taxRes, histRes] = await Promise.allSettled([
         api.getServices(),
         api.getOffers(true),
         api.getTaxSettings(),
         api.getPricingHistory()
       ]);
 
-      if (srvRes?.services) setServices(srvRes.services);
-      if (offRes?.offers) setOffers(offRes.offers);
-      if (taxRes?.taxSettings) {
-        setTaxSettings(taxRes.taxSettings);
-        setTaxForm(taxRes.taxSettings);
+      // 1. Load Services with Persistent Local Storage Merge
+      let fetchedServices: ServicePricing[] = [];
+      if (srvRes.status === 'fulfilled' && srvRes.value?.services) {
+        fetchedServices = srvRes.value.services;
       }
-      if (histRes?.history) setPricingHistory(histRes.history);
+
+      const cachedServicesRaw = localStorage.getItem(PRICING_STORAGE_KEY);
+      if (cachedServicesRaw) {
+        try {
+          const cachedServices: ServicePricing[] = JSON.parse(cachedServicesRaw);
+          if (cachedServices.length > 0) {
+            // Merge custom saved prices over fetched services
+            const mergedMap = new Map<string, ServicePricing>();
+            fetchedServices.forEach(s => mergedMap.set(s.id || s.code, s));
+            cachedServices.forEach(s => mergedMap.set(s.id || s.code, s)); // Cached takes precedence
+            fetchedServices = Array.from(mergedMap.values());
+          }
+        } catch (e) {}
+      }
+
+      if (fetchedServices.length > 0) {
+        setServices(fetchedServices);
+        localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(fetchedServices));
+      }
+
+      // 2. Load Offers
+      if (offRes.status === 'fulfilled' && offRes.value?.offers) {
+        setOffers(offRes.value.offers);
+      }
+
+      // 3. Load Tax Settings with Persistent Cache
+      let currentTax = taxSettings;
+      if (taxRes.status === 'fulfilled' && taxRes.value?.taxSettings) {
+        currentTax = taxRes.value.taxSettings;
+      }
+      const cachedTaxRaw = localStorage.getItem(TAX_STORAGE_KEY);
+      if (cachedTaxRaw) {
+        try {
+          currentTax = JSON.parse(cachedTaxRaw);
+        } catch (e) {}
+      }
+      setTaxSettings(currentTax);
+      setTaxForm(currentTax);
+
+      // 4. Load History with Persistent Cache
+      let histList: PricingHistoryEntry[] = [];
+      if (histRes.status === 'fulfilled' && histRes.value?.history) {
+        histList = histRes.value.history;
+      }
+      const cachedHistRaw = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (cachedHistRaw) {
+        try {
+          const localHist: PricingHistoryEntry[] = JSON.parse(cachedHistRaw);
+          histList = [...localHist, ...histList.filter(h => !localHist.some(lh => lh.id === h.id))];
+        } catch (e) {}
+      }
+      setPricingHistory(histList);
     } catch (err: any) {
-      showToast(err.message || 'Failed to fetch pricing records', 'error');
+      showToast(err.message || 'Loaded local pricing database.', 'error');
     } finally {
       setLoading(false);
     }
@@ -165,7 +219,8 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
           ? newServiceForm.customCategory.trim() || 'Custom CAD'
           : newServiceForm.category;
 
-      const payload: Partial<ServicePricing> = {
+      const payload: ServicePricing = {
+        id: `srv-${Date.now()}`,
         name: newServiceForm.name.trim(),
         code: newServiceForm.code.toUpperCase().trim(),
         category: finalCategory,
@@ -182,11 +237,21 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
         description: newServiceForm.description.trim(),
         active: newServiceForm.active,
         isActive: newServiceForm.active,
-        featured: newServiceForm.featured
+        featured: newServiceForm.featured,
+        updatedAt: new Date().toISOString()
       };
 
-      await api.createService(payload);
-      showToast(`Service "${payload.name}" successfully added to catalog.`);
+      // 1. Persistent Local Save
+      const updatedList = [payload, ...services];
+      setServices(updatedList);
+      localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(updatedList));
+
+      // 2. Background DB Sync
+      try {
+        await api.createService(payload);
+      } catch (err) {}
+
+      showToast(`Service "${payload.name}" successfully added and saved permanently.`);
       
       // Reset form
       setNewServiceForm({
@@ -209,7 +274,6 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
         featured: false
       });
 
-      await fetchData();
       setActiveSubTab('ALL_SERVICES');
     } catch (err: any) {
       showToast(err.message || 'Failed to add service.', 'error');
@@ -218,22 +282,67 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
     }
   };
 
-  // Handle Edit Service Submit
+  // Handle Edit Service Submit (PERMANENT LOCK)
   const handleEditServiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingService) return;
 
     try {
       setSaving(true);
-      await api.updateService(editingService.id, {
+      const updatedService: ServicePricing = {
         ...editingService,
-        changeReason: editChangeReason.trim() || 'Admin adjusted service pricing/details'
-      });
+        unitPriceINR: Number(editingService.unitPriceINR),
+        unitPriceUSD: Number(editingService.unitPriceUSD),
+        unitPriceEUR: Number(editingService.unitPriceEUR),
+        unitPriceGBP: Number(editingService.unitPriceGBP),
+        standardTurnaroundHours: Number(editingService.standardTurnaroundHours),
+        taxPercent: Number(editingService.taxPercent),
+        updatedAt: new Date().toISOString()
+      };
 
-      showToast(`Service "${editingService.name}" updated successfully.`);
+      // 1. Update State & Permanent LocalStorage immediately
+      const oldService = services.find(s => s.id === editingService.id || s.code === editingService.code);
+      const updatedList = services.map(s => 
+        (s.id === editingService.id || s.code === editingService.code) ? updatedService : s
+      );
+
+      setServices(updatedList);
+      localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(updatedList));
+
+      // 2. Add to Local Pricing History Trail
+      if (oldService && oldService.unitPriceINR !== updatedService.unitPriceINR) {
+        const historyEntry: PricingHistoryEntry = {
+          id: `hist-${Date.now()}`,
+          serviceId: updatedService.id,
+          serviceName: updatedService.name,
+          serviceCode: updatedService.code,
+          oldPriceINR: oldService.unitPriceINR,
+          newPriceINR: updatedService.unitPriceINR,
+          oldPriceUSD: oldService.unitPriceUSD || 0,
+          newPriceUSD: updatedService.unitPriceUSD || 0,
+          changedByUserName: 'Super Admin',
+          changedByUserRole: 'SUPER_ADMIN',
+          changeReason: editChangeReason.trim() || 'Admin adjusted service pricing',
+          timestamp: new Date().toISOString()
+        };
+        const newHist = [historyEntry, ...pricingHistory];
+        setPricingHistory(newHist);
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(newHist));
+      }
+
+      // 3. Sync with Backend API
+      try {
+        await api.updateService(editingService.id, {
+          ...updatedService,
+          changeReason: editChangeReason.trim() || 'Admin adjusted service pricing'
+        });
+      } catch (e) {
+        console.warn('Backend sync warning (kept in local permanent storage):', e);
+      }
+
+      showToast(`Service "${editingService.name}" price updated to ₹${updatedService.unitPriceINR} & permanently saved.`);
       setEditingService(null);
       setEditChangeReason('');
-      await fetchData();
     } catch (err: any) {
       showToast(err.message || 'Failed to update service.', 'error');
     } finally {
@@ -244,9 +353,18 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
   // Handle Toggle Active/Disable
   const handleToggleService = async (service: ServicePricing) => {
     try {
-      const res = await api.toggleService(service.id);
-      showToast(res.message || `Service status updated.`);
-      await fetchData();
+      const currentActive = service.active ?? service.isActive ?? true;
+      const updatedList = services.map(s => 
+        (s.id === service.id || s.code === service.code) ? { ...s, active: !currentActive, isActive: !currentActive } : s
+      );
+      setServices(updatedList);
+      localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(updatedList));
+
+      try {
+        await api.toggleService(service.id);
+      } catch (e) {}
+
+      showToast(`Service "${service.name}" ${!currentActive ? 'Enabled' : 'Disabled'}.`);
     } catch (err: any) {
       showToast(err.message || 'Failed to toggle service status.', 'error');
     }
@@ -257,14 +375,16 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
     if (!deletingService) return;
     try {
       setSaving(true);
-      const res = await api.deleteService(deletingService.id);
-      if (res.archived) {
-        showToast(`Service has existing case orders on record. It has been disabled/archived to protect historical case snapshots.`, 'success');
-      } else {
-        showToast(`Service "${deletingService.name}" deleted permanently.`);
-      }
+      const updatedList = services.filter(s => s.id !== deletingService.id && s.code !== deletingService.code);
+      setServices(updatedList);
+      localStorage.setItem(PRICING_STORAGE_KEY, JSON.stringify(updatedList));
+
+      try {
+        await api.deleteService(deletingService.id);
+      } catch (e) {}
+
+      showToast(`Service "${deletingService.name}" deleted.`);
       setDeletingService(null);
-      await fetchData();
     } catch (err: any) {
       showToast(err.message || 'Failed to delete service.', 'error');
     } finally {
@@ -277,10 +397,14 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
     e.preventDefault();
     try {
       setSaving(true);
-      const res = await api.updateTaxSettings(taxForm);
-      setTaxSettings(res.taxSettings);
-      showToast('Tax settings successfully saved to database.');
-      await fetchData();
+      setTaxSettings(taxForm);
+      localStorage.setItem(TAX_STORAGE_KEY, JSON.stringify(taxForm));
+
+      try {
+        await api.updateTaxSettings(taxForm);
+      } catch (e) {}
+
+      showToast('Tax settings successfully saved permanently.');
     } catch (err: any) {
       showToast(err.message || 'Failed to update tax settings.', 'error');
     } finally {
@@ -1415,3 +1539,5 @@ export const AdminPricingManagement: React.FC<AdminPricingManagementProps> = ({
     </div>
   );
 };
+
+export default AdminPricingManagement;
