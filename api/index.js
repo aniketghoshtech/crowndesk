@@ -3374,6 +3374,58 @@ router4.patch("/employees/:id/toggle-status", requireAdmin, async (req, res) => 
     res.status(500).json({ error: "Failed to toggle status." });
   }
 });
+router4.delete(["/employees/:id", "/users/:id"], requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const target = db.findUserById(id) || db.findUserByEmail(id);
+    if (target) {
+      db.deleteUser(target.id);
+    }
+    try {
+      await supabase.from("profiles").delete().or(`id.eq.${id},email.eq.${id}`);
+    } catch (e) {
+      console.warn("Supabase delete profile warning:", e);
+    }
+    res.json({ message: "Employee / User deleted successfully." });
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Failed to delete user." });
+  }
+});
+router4.put(["/employees/:id", "/users/:id"], requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const target = db.findUserById(id) || db.findUserByEmail(id);
+    const { name, fullName, email, phone, specialization, role, isActive, password } = req.body;
+    const targetName = name || fullName;
+    if (target) {
+      if (targetName) target.name = targetName.trim();
+      if (email) target.email = email.trim().toLowerCase();
+      if (phone !== void 0) target.phone = phone;
+      if (specialization !== void 0) target.specialization = specialization;
+      if (role !== void 0) target.role = role;
+      if (isActive !== void 0) target.isActive = Boolean(isActive);
+      if (password && password.trim()) target.passwordHash = hashPassword(password.trim());
+      target.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      db.updateUser(target.id, target);
+    }
+    try {
+      await supabase.from("profiles").upsert({
+        id: target?.id || id,
+        email: email ? email.trim().toLowerCase() : void 0,
+        name: targetName ? targetName.trim() : void 0,
+        phone,
+        specialization,
+        role,
+        is_active: isActive !== void 0 ? Boolean(isActive) : true,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    } catch (e) {
+    }
+    res.json({ message: "Employee / User updated successfully.", employee: target });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update employee." });
+  }
+});
 router4.get("/customers", requireAdmin, async (req, res) => {
   try {
     let cloudCustomers = [];

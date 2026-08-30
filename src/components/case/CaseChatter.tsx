@@ -12,6 +12,41 @@ interface CaseChatterProps {
   defaultPublic?: boolean;
 }
 
+// Smart Deduplication Helper: Drops identical duplicate comments
+const deduplicateComments = (list: CaseComment[]): CaseComment[] => {
+  const unique: CaseComment[] = [];
+
+  for (const item of list) {
+    if (!item) continue;
+    const msg = (item.message || (item as any).comment || (item as any).text || '').trim().toLowerCase();
+    const user = (item.userName || (item as any).author || '').trim().toLowerCase();
+    const time = new Date(item.timestamp || (item as any).createdAt || Date.now()).getTime();
+
+    // Check if duplicate exists in unique array
+    const isDuplicate = unique.some(existing => {
+      // 1. Direct ID match
+      if (item.id && existing.id && item.id === existing.id) return true;
+
+      // 2. Same Message + Same User + Sent within 60 seconds
+      const existingMsg = (existing.message || (existing as any).comment || (existing as any).text || '').trim().toLowerCase();
+      const existingUser = (existing.userName || (existing as any).author || '').trim().toLowerCase();
+      const existingTime = new Date(existing.timestamp || (existing as any).createdAt || Date.now()).getTime();
+
+      const sameContent = existingMsg === msg && msg.length > 0;
+      const sameSender = existingUser === user;
+      const withinTimeWindow = Math.abs(time - existingTime) < 60000; // 60 seconds window
+
+      return sameContent && sameSender && withinTimeWindow;
+    });
+
+    if (!isDuplicate) {
+      unique.push(item);
+    }
+  }
+
+  return unique;
+};
+
 export const CaseChatter: React.FC<CaseChatterProps> = ({
   caseId,
   comments = [],
@@ -25,26 +60,27 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
   const [filterTech, setFilterTech] = useState<'ALL' | 'PUBLIC_ONLY' | 'TECH_ONLY'>('ALL');
   const [submitting, setSubmitting] = useState(false);
 
-  // Local storage key for persistent caching (Never loses messages)
   const chatterStorageKey = `crowndesk_case_chatter_${caseId}`;
   const [cachedComments, setCachedComments] = useState<CaseComment[]>([]);
 
-  // Load and merge comments from Props + LocalStorage cache
+  // Load and merge comments with automatic deduplication
   useEffect(() => {
-    let combined: CaseComment[] = [...comments];
+    let combinedList: CaseComment[] = [...comments];
+
     const saved = localStorage.getItem(chatterStorageKey);
     if (saved) {
       try {
         const localList: CaseComment[] = JSON.parse(saved);
-        if (Array.isArray(localList) && localList.length > 0) {
-          const map = new Map<string, CaseComment>();
-          combined.forEach(c => map.set(c.id || `${c.timestamp}-${c.message}`, c));
-          localList.forEach(c => map.set(c.id || `${c.timestamp}-${c.message}`, c));
-          combined = Array.from(map.values());
+        if (Array.isArray(localList)) {
+          combinedList = [...combinedList, ...localList];
         }
       } catch (e) {}
     }
-    setCachedComments(combined);
+
+    // Filter out duplicates
+    const cleaned = deduplicateComments(combinedList);
+    setCachedComments(cleaned);
+    localStorage.setItem(chatterStorageKey, JSON.stringify(cleaned));
   }, [caseId, comments]);
 
   const canPostTechnical = 
@@ -57,12 +93,13 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
     if (!message.trim() || submitting) return;
 
     const trimmedMsg = message.trim();
+    const tempId = `temp-${Date.now()}`;
     const newCommentObj: CaseComment = {
-      id: `comm-${Date.now()}`,
+      id: tempId,
       caseId: caseId,
       userId: currentUser?.id || 'usr-temp',
       userName: currentUser?.name || 'Staff',
-      userRole: currentUser?.role || 'DOCTOR_LAB',
+      userRole: currentUser?.role || 'DESIGNER_EMPLOYEE',
       message: trimmedMsg,
       timestamp: new Date().toISOString(),
       isTechnicalOnly: isTechnicalOnly
@@ -71,16 +108,16 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
     try {
       setSubmitting(true);
 
-      // 1. Instantly save to local permanent cache (Prevents disappearing bug)
-      const updated = [...cachedComments, newCommentObj];
+      // Add optimistic comment and deduplicate immediately
+      const updated = deduplicateComments([...cachedComments, newCommentObj]);
       setCachedComments(updated);
       localStorage.setItem(chatterStorageKey, JSON.stringify(updated));
 
-      // 2. Call API
+      // Post to backend API
       try {
         await api.postCaseComment(caseId, trimmedMsg, isTechnicalOnly);
       } catch (apiErr) {
-        console.warn('API post warning (kept in local permanent cache):', apiErr);
+        console.warn('API post warning (persisted locally):', apiErr);
       }
 
       setMessage('');
@@ -94,7 +131,7 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
     }
   };
 
-  // Filter comments safely
+  // Filter comments for Doctor vs Internal view
   const filteredComments = useMemo(() => {
     const isDoctor = 
       currentUser?.role === 'DOCTOR_LAB' || 
@@ -102,7 +139,7 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
       (currentUser?.name || '').toLowerCase().includes('dr');
 
     return cachedComments.filter(c => {
-      // If user is a Doctor, hide internal notes ONLY if explicitly marked isTechnicalOnly === true
+      // Hide internal notes from Doctor
       if (isDoctor && c.isTechnicalOnly === true) {
         return false;
       }
@@ -134,7 +171,7 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
                 filterTech === 'ALL' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              All ({cachedComments.length})
+              All ({filteredComments.length})
             </button>
             <button
               type="button"
@@ -242,7 +279,7 @@ export const CaseChatter: React.FC<CaseChatterProps> = ({
             placeholder={
               isTechnicalOnly
                 ? 'Type internal note for designer/QC team...'
-                : 'Type message or clinical instruction to doctor...'
+                : 'Type message or clinical instruction...'
             }
             className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition"
           />
